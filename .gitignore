@@ -1,0 +1,10 @@
+# everything a user makes stays on their machine
+node_modules/
+projects/
+renders/
+trash/
+out/
+dist/
+.moootion/
+.runtime/
+*.tmp

@@ -1,0 +1,82 @@
+[
+  {
+    "id": "iphone-17-air",
+    "title": "Стандартный",
+    "thumb": "iphone-17-air/thumb.png"
+  },
+  {
+    "id": "slime",
+    "title": "Слайм",
+    "thumb": "slime/thumb.png"
+  },
+  {
+    "id": "pixel",
+    "title": "Пиксели",
+    "thumb": "pixel/thumb.png"
+  },
+  {
+    "id": "ice",
+    "title": "Лёд",
+    "thumb": "ice/thumb.png"
+  },
+  {
+    "id": "sprinkles",
+    "title": "Посыпка",
+    "thumb": "sprinkles/thumb.png"
+  },
+  {
+    "id": "pizza",
+    "title": "Пицца",
+    "thumb": "pizza/thumb.png"
+  },
+  {
+    "id": "green-glass",
+    "title": "Зелёное стекло",
+    "thumb": "green-glass/thumb.png"
+  },
+  {
+    "id": "crispy",
+    "title": "Хрустящая корочка",
+    "thumb": "crispy/thumb.png"
+  },
+  {
+    "id": "lava",
+    "title": "Вулканический камень",
+    "thumb": "lava/thumb.png"
+  },
+  {
+    "id": "tortilla",
+    "title": "Тортилья",
+    "thumb": "tortilla/thumb.png"
+  },
+  {
+    "id": "bricks",
+    "title": "Конструктор",
+    "thumb": "bricks/thumb.png"
+  },
+  {
+    "id": "cow-fur",
+    "title": "Мех в пятнах",
+    "thumb": "cow-fur/thumb.png"
+  },
+  {
+    "id": "crystal",
+    "title": "Хрусталь",
+    "thumb": "crystal/thumb.png"
+  },
+  {
+    "id": "purple-fur",
+    "title": "Фиолетовый мех",
+    "thumb": "purple-fur/thumb.png"
+  },
+  {
+    "id": "chrome-tribal",
+    "title": "Хром-трайбл",
+    "thumb": "chrome-tribal/thumb.png"
+  },
+  {
+    "id": "chrome-roses",
+    "title": "Хром с розами",
+    "thumb": "chrome-roses/thumb.png"
+  }
+]

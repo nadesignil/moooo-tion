@@ -1,0 +1,834 @@
+{
+  "id": "demo",
+  "title": "S7 · Главная и поиск",
+  "fps": 60,
+  "width": 1920,
+  "height": 1080,
+  "scenes": [
+    {
+      "id": "glavnaya-poisk",
+      "title": "Главная и поиск",
+      "duration": 19.766667,
+      "groups": [
+        {
+          "id": "g-site",
+          "title": "Самолёт → сайт → баннер с милями",
+          "from": 0,
+          "to": 6.9
+        },
+        {
+          "id": "g-form",
+          "title": "Форма: «Мальдивы» и календарь",
+          "from": 6.9,
+          "to": 11.183333
+        },
+        {
+          "id": "g-dates",
+          "title": "Выбор дат 7–10",
+          "from": 11.183333,
+          "to": 13.766667
+        },
+        {
+          "id": "g-flights",
+          "title": "Переход к рейсам",
+          "from": 13.766667,
+          "to": 19.766667
+        }
+      ],
+      "actions": [
+        {
+          "id": "fade-in",
+          "title": "Проявление из чёрного",
+          "layer": "Кадр",
+          "effect": "appear.fade",
+          "start": 0.0,
+          "duration": 0.6,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.33,
+              0,
+              0.67,
+              1
+            ]
+          }
+        },
+        {
+          "id": "hero-drift",
+          "title": "Самолёт улетает (дрейф видео)",
+          "layer": "Видео-баннер",
+          "effect": "react.drift",
+          "start": 0.0,
+          "duration": 5.183333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0,
+              0,
+              1,
+              1
+            ]
+          },
+          "params": {
+            "zoomFrom": 1.0,
+            "zoomTo": 1.09,
+            "panX": -40,
+            "panY": 18
+          }
+        },
+        {
+          "id": "cam-hero",
+          "title": "Медленный наезд на облака",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 0.0,
+          "duration": 2.6,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.3,
+              0.1,
+              0.4,
+              1
+            ]
+          },
+          "params": {
+            "cxFrom": 890.9,
+            "cyFrom": 640,
+            "sFrom": 1.3,
+            "cx": 890.9,
+            "cy": 605.8,
+            "s": 1.182
+          }
+        },
+        {
+          "id": "cam-site",
+          "title": "Отъезд: видео становится баннером",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 2.6,
+          "duration": 1.433333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.5,
+              0,
+              0.12,
+              1
+            ]
+          },
+          "params": {
+            "cx": 865.2,
+            "cy": 385.3,
+            "s": 0.846
+          }
+        },
+        {
+          "id": "top-in",
+          "title": "Шапка и форма съезжают сверху",
+          "layer": "Шапка",
+          "effect": "appear.slideFrom",
+          "start": 2.716667,
+          "duration": 1.283333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "distance": 420
+          }
+        },
+        {
+          "id": "wrapper-in",
+          "title": "Нижний блок выезжает снизу",
+          "layer": "Блок «Куда летаем»",
+          "effect": "appear.slideFrom",
+          "start": 2.8,
+          "duration": 1.283333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "distance": 360
+          }
+        },
+        {
+          "id": "banner1-text",
+          "title": "Текст баннера «Летать по-новому»",
+          "layer": "Текст баннера",
+          "effect": "appear.rise",
+          "start": 3.466667,
+          "duration": 0.9,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "stagger": 0.07,
+            "rise": 40
+          }
+        },
+        {
+          "id": "cam-miles",
+          "title": "Лёгкий отъезд на всю страницу",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 4.75,
+          "duration": 1.716667,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.65,
+              0,
+              0.35,
+              1
+            ]
+          },
+          "params": {
+            "cx": 865.9,
+            "cy": 565.0,
+            "s": 0.731
+          }
+        },
+        {
+          "id": "slide-swap",
+          "title": "Слайдер листается на баннер с милями",
+          "layer": "Видео-баннер",
+          "effect": "swap.slide",
+          "start": 5.183333,
+          "duration": 0.85,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.7,
+              0,
+              0.2,
+              1
+            ]
+          },
+          "params": {
+            "parallax": 0.35
+          },
+          "variants": [
+            "swap.crossfade"
+          ]
+        },
+        {
+          "id": "coins-fall",
+          "title": "Мили падают",
+          "layer": "Монеты",
+          "effect": "appear.fall",
+          "start": 5.383333,
+          "duration": 0.65,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.55,
+              0,
+              0.9,
+              0.45
+            ]
+          },
+          "params": {
+            "height": 900,
+            "spin": -14,
+            "blur": 1
+          }
+        },
+        {
+          "id": "coins-land",
+          "title": "Мили пружинят при приземлении",
+          "layer": "Монеты",
+          "effect": "react.bounce",
+          "start": 6.033333,
+          "duration": 1.133333,
+          "curve": {
+            "type": "spring",
+            "damping": 9,
+            "stiffness": 170
+          },
+          "params": {
+            "squash": 0.07
+          }
+        },
+        {
+          "id": "banner2-text",
+          "title": "Текст «В два раза больше миль»",
+          "layer": "Текст баннера",
+          "effect": "appear.rise",
+          "start": 5.433333,
+          "duration": 0.9,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "stagger": 0.07,
+            "rise": 40
+          }
+        },
+        {
+          "id": "cam-form",
+          "title": "Зум к форме поиска",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 6.9,
+          "duration": 1.283333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.76,
+              0,
+              0.24,
+              1
+            ]
+          },
+          "params": {
+            "cx": 636.6,
+            "cy": 311.3,
+            "s": 1.53,
+            "rz": 0.8,
+            "ry": 0,
+            "rx": 0
+          }
+        },
+        {
+          "id": "ui-hide",
+          "title": "Лишний интерфейс исчезает",
+          "layer": "Страница",
+          "effect": "disappear.fade",
+          "start": 6.9,
+          "duration": 0.7,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "tabs-hide",
+          "title": "Заголовки разделов уходят",
+          "layer": "Табы «Покупка»",
+          "effect": "disappear.fade",
+          "start": 8.616667,
+          "duration": 0.45,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.6,
+              1
+            ]
+          },
+          "params": {
+            "lift": 30
+          }
+        },
+        {
+          "id": "cam-type",
+          "title": "Дрейф к полю «Куда»",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 8.183333,
+          "duration": 1.283333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.33,
+              0,
+              0.2,
+              1
+            ]
+          },
+          "params": {
+            "cx": 506.4,
+            "cy": 318.5,
+            "s": 2.33,
+            "rz": 0.8,
+            "ry": 0,
+            "rx": 0
+          }
+        },
+        {
+          "id": "placeholder-out",
+          "title": "Плейсхолдер «Куда» гаснет",
+          "layer": "Поле «Куда»",
+          "effect": "disappear.fade",
+          "start": 8.083333,
+          "duration": 0.2,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "typing",
+          "title": "«Мальдивы» вводится заборчиком",
+          "layer": "Поле «Куда»",
+          "effect": "appear.wave",
+          "start": 8.183333,
+          "duration": 0.55,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "text": "Мальдивы",
+            "stagger": 0.1073,
+            "rise": 18,
+            "blur": 6
+          }
+        },
+        {
+          "id": "cam-calendar",
+          "title": "Камера опускается к календарю",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 9.466667,
+          "duration": 1.083333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.65,
+              0,
+              0.35,
+              1
+            ]
+          },
+          "params": {
+            "cx": 485.4,
+            "cy": 488.4,
+            "s": 2.33,
+            "rz": 0.5,
+            "ry": 0,
+            "rx": 0
+          }
+        },
+        {
+          "id": "calendar-in",
+          "title": "Календарь раскрывается",
+          "layer": "Календарь",
+          "effect": "appear.growFrom",
+          "start": 9.516667,
+          "duration": 0.7,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "fromScale": 0.92,
+            "fromY": -40
+          }
+        },
+        {
+          "id": "dates-in",
+          "title": "Даты проявляются волной",
+          "layer": "Даты",
+          "effect": "appear.wave",
+          "start": 9.616667,
+          "duration": 0.45,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "stagger": 0.012,
+            "rise": 10
+          }
+        },
+        {
+          "id": "dates-out",
+          "title": "Лишние даты убираются",
+          "layer": "Даты",
+          "effect": "disappear.fade",
+          "start": 11.183333,
+          "duration": 0.6,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.7,
+              1
+            ]
+          },
+          "params": {
+            "stagger": 0.012,
+            "sink": 0.85
+          }
+        },
+        {
+          "id": "cam-dates",
+          "title": "Зум на неделю 7–10",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 11.183333,
+          "duration": 1.083333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.76,
+              0,
+              0.24,
+              1
+            ]
+          },
+          "params": {
+            "cx": 285.5,
+            "cy": 462,
+            "s": 5.15,
+            "rz": 0.9,
+            "ry": 0,
+            "rx": 0
+          }
+        },
+        {
+          "id": "cursor-in",
+          "title": "Курсор подлетает к 7",
+          "layer": "Курсор",
+          "effect": "transform.move",
+          "start": 11.816667,
+          "duration": 0.65,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.25,
+              0,
+              0.1,
+              1
+            ]
+          },
+          "params": {
+            "fromX": 1750,
+            "fromY": 1180,
+            "tipX": 18,
+            "tipY": 62
+          }
+        },
+        {
+          "id": "click-7",
+          "title": "Нажатие на 7",
+          "layer": "Курсор",
+          "effect": "click.press",
+          "start": 12.466667,
+          "duration": 0.183333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.6,
+              1
+            ]
+          },
+          "params": {
+            "depth": 0.14
+          }
+        },
+        {
+          "id": "select-7",
+          "title": "7 становится зелёной",
+          "layer": "Дата 7",
+          "effect": "click.highlight",
+          "start": 12.533333,
+          "duration": 0.983333,
+          "curve": {
+            "type": "spring",
+            "damping": 11,
+            "stiffness": 210
+          }
+        },
+        {
+          "id": "cursor-move",
+          "title": "Курсор переезжает на 10",
+          "layer": "Курсор",
+          "effect": "transform.move",
+          "start": 12.666667,
+          "duration": 0.233333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.55,
+              0,
+              0.15,
+              1
+            ]
+          },
+          "params": {
+            "arc": -60
+          }
+        },
+        {
+          "id": "click-10",
+          "title": "Нажатие на 10",
+          "layer": "Курсор",
+          "effect": "click.press",
+          "start": 12.9,
+          "duration": 0.183333,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.6,
+              1
+            ]
+          },
+          "params": {
+            "depth": 0.14
+          }
+        },
+        {
+          "id": "select-10",
+          "title": "10 становится зелёной",
+          "layer": "Дата 10",
+          "effect": "click.highlight",
+          "start": 12.966667,
+          "duration": 0.983333,
+          "curve": {
+            "type": "spring",
+            "damping": 11,
+            "stiffness": 210
+          }
+        },
+        {
+          "id": "range-fill",
+          "title": "Диапазон 7–10 заливается",
+          "layer": "Диапазон дат",
+          "effect": "appear.growFrom",
+          "start": 12.933333,
+          "duration": 0.55,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          }
+        },
+        {
+          "id": "cursor-out",
+          "title": "Курсор уходит",
+          "layer": "Курсор",
+          "effect": "disappear.slideTo",
+          "start": 13.766667,
+          "duration": 0.5,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.5,
+              0,
+              0.9,
+              0.5
+            ]
+          },
+          "params": {
+            "toX": 420,
+            "toY": 520
+          }
+        },
+        {
+          "id": "cam-out",
+          "title": "Камера пролетает сквозь даты",
+          "layer": "Камера",
+          "effect": "camera.push",
+          "start": 13.766667,
+          "duration": 0.85,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.6,
+              0,
+              0.9,
+              0.6
+            ]
+          },
+          "params": {
+            "push": 1.9,
+            "blur": 14
+          }
+        },
+        {
+          "id": "bg-grey",
+          "title": "Фон становится серым",
+          "layer": "Фон",
+          "effect": "swap.color",
+          "start": 14.016667,
+          "duration": 0.5,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.65,
+              0,
+              0.35,
+              1
+            ]
+          },
+          "params": {
+            "color": "#f1f2f4"
+          }
+        },
+        {
+          "id": "title-in",
+          "title": "Заголовок «Выберите рейс туда»",
+          "layer": "Заголовок рейсов",
+          "effect": "appear.rise",
+          "start": 14.2,
+          "duration": 0.9,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.16,
+              1,
+              0.3,
+              1
+            ]
+          },
+          "params": {
+            "text": "Выберите рейс туда · 7 ноября, вт",
+            "route": "Мале",
+            "rise": 60,
+            "blur": 10
+          }
+        },
+        {
+          "id": "cards-in",
+          "title": "Карточки рейсов поднимаются колодой",
+          "layer": "Карточки рейсов",
+          "effect": "appear.rise",
+          "start": 14.616667,
+          "duration": 0.633333,
+          "curve": {
+            "type": "spring",
+            "damping": 15,
+            "stiffness": 120
+          },
+          "params": {
+            "rise": 420,
+            "stagger": 0.2147
+          }
+        },
+        {
+          "id": "cards-spread",
+          "title": "Колода раскладывается в список",
+          "layer": "Карточки рейсов",
+          "effect": "transform.spring",
+          "start": 16.333333,
+          "duration": 0.633333,
+          "curve": {
+            "type": "spring",
+            "damping": 17,
+            "stiffness": 130
+          }
+        },
+        {
+          "id": "title-out",
+          "title": "Заголовок уходит вверх",
+          "layer": "Заголовок рейсов",
+          "effect": "disappear.slideTo",
+          "start": 16.333333,
+          "duration": 0.6,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.5,
+              0,
+              0.75,
+              0
+            ]
+          },
+          "params": {
+            "lift": 120
+          }
+        },
+        {
+          "id": "cards-float",
+          "title": "Карточки дышат",
+          "layer": "Карточки рейсов",
+          "effect": "react.float",
+          "start": 16.766667,
+          "duration": 3.0,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0,
+              0,
+              1,
+              1
+            ]
+          },
+          "params": {
+            "amp": 5,
+            "freq": 0.35
+          }
+        },
+        {
+          "id": "fade-out",
+          "title": "Затемнение в конце",
+          "layer": "Кадр",
+          "effect": "disappear.fade",
+          "start": 18.916667,
+          "duration": 0.85,
+          "curve": {
+            "type": "bezier",
+            "v": [
+              0.4,
+              0,
+              0.6,
+              1
+            ]
+          }
+        }
+      ],
+      "backlog": []
+    }
+  ]
+}

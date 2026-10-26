@@ -1,0 +1,10 @@
+{
+  "id": "iphone-17-air",
+  "title": "Стандартный",
+  "material": "iPhone 17 Air, Sky Blue — вектор из Figma",
+  "device": "iPhone 17 Air",
+  "size": [1712, 3519],
+  "screen": {"x": 67, "y": 58, "w": 1577, "h": 3403, "r": 124},
+  "source": "https://www.figma.com/design/yYf9Wp6XsHJfkdG4GqN7Pa/iPhone-17-Air-Mockups-%7C-Vector--Community-?node-id=201-16",
+  "note": "Figma Community. Экран прозрачный, Dynamic Island — часть device.png; контент экрана кладётся ПОД device.png в прямоугольник screen со скруглением r."
+}
