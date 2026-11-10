@@ -21,7 +21,7 @@ await fs.rm(path.join(DIST, 'stage'), {recursive: true, force: true});
 await fs.mkdir(STAGE, {recursive: true});
 
 // the app: the same whitelist the public repository has
-const APP = ['server', 'studio', 'runtime', 'library', 'templates', 'tools', 'install/executor', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'README.md', 'NOTICE.md', 'rules', 'docs/astra-method-13.md', 'docs/github-export.md'];
+const APP = ['AGENTS.md', 'server', 'studio', 'runtime', 'library', 'templates', 'tools', 'install', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'README.md', 'NOTICE.md', 'rules', 'docs/astra-method-13.md', 'docs/github-export.md', 'docs/installation.md'];
 for (const item of APP) {
   const from = path.join(ROOT, item);
   if (await fs.stat(from).catch(() => null)) await fs.cp(from, path.join(STAGE, item), {recursive: true});

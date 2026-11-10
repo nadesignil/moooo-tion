@@ -25,6 +25,8 @@ app.onError((err, c) => {
   return c.json({error: err.message}, 500);
 });
 
+app.get('/api/setup/status', async (c) => c.json(await (await import('./setup')).setupStatus()));
+
 // ── Claude ─────────────────────────────────────────────
 app.get('/api/claude/status', async (c) => c.json(await (await claude()).claudeStatus()));
 app.post('/api/claude/verify', async (c) => c.json(await (await claude()).verifyClaude()));

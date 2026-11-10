@@ -1,13 +1,16 @@
+import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import os from 'node:os';
 import {TEMP_ROOT,projectDir} from './paths';
 import {scopedPath} from './project-scope';
 
 export const EXECUTOR_IMAGE='moootion-executor:1';
 const MAX_BYTES=1024*1024*1024;
+// /Applications is not shared with Docker Desktop. Stage only copied inputs in
+// the macOS temporary directory, which Docker can mount without wider access.
+const EXECUTOR_TEMP_ROOT=process.platform==='darwin'?path.join(os.tmpdir(),'moootion-executor'):path.join(TEMP_ROOT,'executor');
 const active=new Set<string>();
 type CommandResult={code:number;stdout:string;stderr:string};
 export type SandboxRequest={language:'python'|'shell';code:string;inputs:string[];timeoutSeconds?:number};
@@ -29,7 +32,7 @@ async function dockerHost(){
  if(process.platform==='win32')return 'npipe:////./pipe/docker_engine';
  if(process.platform==='darwin'){
   const socket=path.join(os.homedir(),'.docker','run','docker.sock');
-  if(await fs.access(socket).then(()=>true,()=>false))return `unix://${socket}`;
+  if(await fs.stat(socket).then(s=>s.isSocket(),()=>false))return `unix://${socket}`;
  }
  return 'unix:///var/run/docker.sock';
 }
@@ -71,9 +74,11 @@ async function command(bin:string,args:string[],opts:{signal?:AbortSignal;stdin?
 export const executorDocker=async(args:string[],opts:{timeout?:number;maxOutput?:number}={})=>command(await dockerBin(),args,opts);
 export async function sandboxStatus(signal?:AbortSignal){
  const bin=await dockerBin();
+ const install=process.platform==='win32'?'Установите Docker Desktop с WSL 2, затем выполните tools/build-executor.ps1.':'Установите и запустите Docker Desktop, затем выполните docker build -t moootion-executor:1 install/executor.';
+ const start=process.platform==='win32'?'Запустите Docker Desktop; после установки WSL может требоваться перезагрузка Windows.':'Запустите Docker Desktop и дождитесь готовности движка.';
  try{
   const info=await command(bin,['info','--format','{{.OSType}}'],{signal});
-  if(info.code!==0)return {ready:false,code:'engine-unavailable',reason:'Linux-движок Docker не отвечает. Запустите Docker Desktop; после установки WSL может требоваться перезагрузка Windows.',image:EXECUTOR_IMAGE};
+  if(info.code!==0)return {ready:false,code:'engine-unavailable',reason:'Linux-движок Docker не отвечает. '+start,image:EXECUTOR_IMAGE};
   if(info.stdout.trim()!=='linux')return {ready:false,code:'wrong-engine',reason:'Переключите Docker на Linux-контейнеры',image:EXECUTOR_IMAGE};
   const image=await command(bin,['image','inspect',EXECUTOR_IMAGE,'--format','{{.Id}}'],{signal});
   if(image.code!==0||!/^sha256:[a-f0-9]{64}$/.test(image.stdout.trim()))return {ready:false,code:'image-missing',reason:'Образ исполнителя ещё не собран; студия подготовит его при запуске.',image:EXECUTOR_IMAGE};
@@ -81,7 +86,7 @@ export async function sandboxStatus(signal?:AbortSignal){
  }catch(e){
   if(signal?.aborted)throw new Error('stopped');
   const missing=(e as NodeJS.ErrnoException).code==='ENOENT';
-  return {ready:false,reason:missing?'Docker не найден. Установите Docker Desktop с WSL 2, затем выполните tools/build-executor.ps1.':'Docker установлен, но Linux-движок не отвечает. Запустите Docker Desktop; после установки WSL может требоваться перезагрузка Windows.',image:EXECUTOR_IMAGE};
+  return {ready:false,reason:missing?'Docker не найден. '+install:'Docker установлен, но Linux-движок не отвечает. '+start,image:EXECUTOR_IMAGE};
  }
 }
 export function containerArgs(name:string,imageId:string,inputDir:string,outputDir:string,language:'python'|'shell'){
@@ -113,7 +118,7 @@ export async function runSandbox(id:string,a:SandboxRequest,signal:AbortSignal){
  try{
   const status=await sandboxStatus(signal);if(!status.ready||!status.imageId)throw new Error(status.reason??'Исполнитель недоступен');
   bin=await dockerBin();
-  const base=path.join(TEMP_ROOT,'executor');await fs.mkdir(base,{recursive:true});
+  const base=EXECUTOR_TEMP_ROOT;await fs.mkdir(base,{recursive:true});
   staging=await fs.mkdtemp(path.join(base,'run-'));
   const inputDir=path.join(staging,'input'),outputDir=path.join(staging,'output');await fs.mkdir(inputDir);await fs.mkdir(outputDir,{mode:0o777});await fs.chmod(outputDir,0o777);
   let bytes=0;const inputs=[];
@@ -151,7 +156,7 @@ export async function runSandbox(id:string,a:SandboxRequest,signal:AbortSignal){
  }finally{
   if(containerAttempted&&!removed){try{const r=await command(bin,['rm','--force',name]);removed=r.code===0||/No such container/i.test(r.stderr);}catch{console.error('Sandbox cleanup failed for',name);}}
   // Never delete a bind mount while an unconfirmed container could still be writing to it.
-  if(staging&&(!containerAttempted||removed)&&path.dirname(staging)===path.join(TEMP_ROOT,'executor'))await fs.rm(staging,{recursive:true,force:true,maxRetries:3});
+  if(staging&&(!containerAttempted||removed)&&path.dirname(staging)===EXECUTOR_TEMP_ROOT)await fs.rm(staging,{recursive:true,force:true,maxRetries:3});
   active.delete(id);
  }
 }

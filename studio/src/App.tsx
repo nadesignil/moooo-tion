@@ -24,7 +24,7 @@ import {CardsGrip, SubsceneCards} from './components/SubsceneCards';
 export const App: React.FC = () => {
   const [ready, setReady] = useState<boolean | null>(null);
 
-  // the start form is shown until Claude was verified on this device once
+  // Setup can be reopened after installation even when the account was verified before.
   useEffect(() => {
     let stop = false;
     // the API server may still be starting: retry for a few seconds
@@ -35,7 +35,7 @@ export const App: React.FC = () => {
         return {...status, saved: provider === 'codex' ? Boolean(s.codexVerifiedAt) : Boolean(localStorage.getItem('moootion:claude'))};
       }).catch(() => null);
       if (stop) return;
-      if (st) setReady(st.saved && (st.login || st.apiKey));
+      if (st) setReady(!new URLSearchParams(location.search).has('setup') && st.saved && (st.login || st.apiKey));
       else if (attempt < 15) setTimeout(() => tick(attempt + 1), 700);
       else setReady(false);
     };

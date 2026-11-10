@@ -7,7 +7,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const WEB = 'http://localhost:5173';
+const WEB = 'http://localhost:5173' + (process.argv.includes('--setup') ? '/?setup=1' : '');
 const node = process.execPath;
 const children = [];
 

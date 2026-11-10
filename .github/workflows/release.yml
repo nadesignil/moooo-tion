@@ -5,6 +5,8 @@ name: release
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths: ['package.json', '.github/workflows/release.yml']
   workflow_dispatch:
 
 permissions:
@@ -35,6 +37,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Installer defaults and update preservation
+        run: node --test tools/setup.test.mjs
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -57,14 +62,32 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const version = require('./package.json').version;
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Expected a stable package version');
+          const tag = 'v' + version;
+          if (process.env.GITHUB_REF.startsWith('refs/tags/') && process.env.GITHUB_REF !== 'refs/tags/' + tag) throw new Error('Tag does not match package version');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'tag=' + tag + '\n');
+          NODE
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Moootion ${{ steps.version.outputs.tag }}
           files: dist/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
+          make_latest: true

@@ -74,6 +74,10 @@ export class CodexClient {
 /** PATH first, then the Codex desktop installation on Windows. No credentials are read. */
 export const findCodex = async (): Promise<string | null> => {
   if (process.env.MOOOTION_CODEX_BIN) return process.env.MOOOTION_CODEX_BIN;
+  // A packaged CLI or the initiating desktop app may be absent from a GUI launcher's PATH.
+  for (const candidate of [process.env.CODEX_CLI_PATH, path.join(ROOT, '.runtime', 'agents', 'node_modules', '@openai', 'codex', 'bin', 'codex.js')]) {
+    if (candidate && await fs.access(candidate).then(() => true, () => false)) return candidate;
+  }
   const candidates = await new Promise<string[]>((resolve) => {
     execFile(process.platform === 'win32' ? 'where.exe' : 'which', ['codex'], {windowsHide: true}, (err, out) => {
       const bins = out.trim().split(/\r?\n/);
@@ -84,6 +88,11 @@ export const findCodex = async (): Promise<string | null> => {
     if (process.platform !== 'win32' || /\.exe$/i.test(candidate)) return candidate;
     const script = path.join(path.dirname(candidate), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
     if (await fs.access(script).then(() => true, () => false)) return script;
+  }
+  if (process.platform === 'darwin') {
+    for (const candidate of ['/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex', '/Applications/Codex.app/Contents/Resources/codex']) {
+      if (await fs.access(candidate).then(() => true, () => false)) return candidate;
+    }
   }
   if (process.platform === 'win32') {
     const base = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin');

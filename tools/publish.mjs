@@ -9,8 +9,8 @@ import {createHash} from 'node:crypto';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const POLICY = Object.freeze({
   directories: ['server', 'studio', 'runtime', 'library', 'templates', 'tools', 'install'],
-  files: ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'README.md', 'NOTICE.md', '.gitignore', '.gitattributes', '.github/workflows/release.yml', '.github/workflows/check.yml', 'rules/astra-method-13.md', 'docs/astra-method-13.md', 'docs/github-export.md'],
-  optionalFiles: ['LICENSE', 'LICENSE.md', 'AGENTS.md'],
+  files: ['AGENTS.md', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'README.md', 'NOTICE.md', '.gitignore', '.gitattributes', '.github/workflows/release.yml', '.github/workflows/check.yml', 'rules/astra-method-13.md', 'docs/astra-method-13.md', 'docs/github-export.md', 'docs/installation.md'],
+  optionalFiles: ['LICENSE', 'LICENSE.md'],
   maxFileBytes: 10 * 1024 * 1024,
   maxTotalBytes: 128 * 1024 * 1024,
 });

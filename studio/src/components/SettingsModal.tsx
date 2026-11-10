@@ -4,6 +4,7 @@ import {useStudio} from '../store';
 import {Checkbox} from './Checkbox';
 import {Modal} from './Modal';
 import {CodexConnectors} from './CodexConnectors';
+import {SetupReadiness} from './SetupReadiness';
 import {AgentConnection} from './AgentConnection';
 
 const AGENT_MODELS = [
@@ -47,6 +48,7 @@ export const SettingsModal: React.FC = () => {
     <Modal title="Настройки" onClose={() => setModal(null)}>
       <div className="form">
         <AgentConnection onReady={() => location.reload()} />
+        <SetupReadiness />
         {provider === 'codex' ? <CodexConnectors /> : null}
         {provider === 'claude' ? <div className={`check ${claude?.login || claude?.apiKey ? 'ok' : 'bad'}`}>
           <span className="dot" />

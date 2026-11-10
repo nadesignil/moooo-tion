@@ -23,7 +23,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Export safety tests (no model or connector calls)
-        run: node --test tools/publish.test.mjs
+        run: node --test tools/setup.test.mjs tools/publish.test.mjs
       - name: Guidance, private history and mocked protocol tests
         run: >-
           node --import tsx --test
@@ -40,3 +40,5 @@ jobs:
           server/claude-boundary.test.ts
       - name: Audit source export without writing an export
         run: node tools/publish.mjs --audit "$RUNNER_TEMP/moootion-source-audit"
+      - name: Installer shell syntax
+        run: bash -n install/install.sh install/moootion.sh install/dependencies.sh

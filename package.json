@@ -1,5 +1,6 @@
 {
   "name": "moootion",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +9,9 @@
     "web": "vite",
     "typecheck": "tsc -p tsconfig.json",
     "dev:watch": "concurrently -k -n api,web -c gray,green \"tsx watch --clear-screen=false server/index.ts\" \"vite\"",
-    "start": "node tools/start.mjs"
+    "start": "node tools/start.mjs",
+    "setup": "node tools/setup.mjs",
+    "doctor": "node tools/setup.mjs --check"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

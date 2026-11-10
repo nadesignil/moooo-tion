@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {ROOT} from './paths';
+import {initializeProvider, readJson} from '../tools/provider-context.mjs';
 
 // Local studio settings. Secrets stay on disk on this machine and are never
 // sent back to the browser — the client only learns whether they are set.
@@ -16,11 +17,10 @@ export const AGENT_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5'] as const;
 export const DEFAULT_AGENT_MODEL = AGENT_MODELS[0];
 
 export const readSettings = async (): Promise<Settings> => {
-  try {
-    return JSON.parse(await fs.readFile(FILE, 'utf8')) as Settings;
-  } catch {
-    return {};
-  }
+  const saved = await readJson(FILE) as Settings;
+  if (saved.agentProvider === 'codex' || saved.agentProvider === 'claude') return saved;
+  await initializeProvider(ROOT);
+  return await readJson(FILE) as Settings;
 };
 
 export const agentModel = (s: Settings) => (s.agentModel && (AGENT_MODELS as readonly string[]).includes(s.agentModel) ? s.agentModel : DEFAULT_AGENT_MODEL);

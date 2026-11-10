@@ -3,7 +3,7 @@ import {api, type ClaudeStatus, type CodexStatus, type AgentProvider} from '../a
 
 /** Shared by onboarding and settings: selection becomes active only after verification. */
 export const AgentConnection: React.FC<{onReady: () => void}> = ({onReady}) => {
-  const [provider, setProvider] = useState<AgentProvider>('claude');
+  const [provider, setProvider] = useState<AgentProvider | null>(null);
   const [status, setStatus] = useState<ClaudeStatus | CodexStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState('');
@@ -11,8 +11,9 @@ export const AgentConnection: React.FC<{onReady: () => void}> = ({onReady}) => {
   const picked = useRef(false);
   const current = useRef(provider);
   current.current = provider;
-  useEffect(() => {api.settings().then((s) => (!picked.current && setProvider(s.agentProvider))).catch(() => {});}, []);
+  useEffect(() => {api.settings().then((s) => (!picked.current && setProvider(s.agentProvider))).catch(() => setDetail('Не удалось загрузить настройки агента. Перезагрузите страницу.'));}, []);
   useEffect(() => {
+    if (!provider) return;
     let live = true;
     setStatus(null); setDetail(''); setAuthUrl('');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -30,6 +31,7 @@ export const AgentConnection: React.FC<{onReady: () => void}> = ({onReady}) => {
     return () => {live = false; clearTimeout(timer);};
   }, [provider]);
   const verify = async () => {
+    if (!provider) return;
     setBusy(true); setDetail('');
     try {
       const r = await api.verifyAgent(provider);
@@ -51,6 +53,7 @@ export const AgentConnection: React.FC<{onReady: () => void}> = ({onReady}) => {
     } catch (e) {popup?.close(); setDetail((e as Error).message);} finally {setBusy(false);}
   };
   const hasLogin = Boolean(status?.login || status?.apiKey);
+  if (!provider) return <p className="form-note">{detail || 'Определяю настройки агента…'}</p>;
   return <div className="form">
     <div className="seg" style={{alignSelf: 'flex-start'}} aria-label="Агент студии">
       {(['claude', 'codex'] as const).map((p) => <button key={p} type="button" disabled={busy} className={provider === p ? 'on' : ''} onClick={() => {picked.current = true; setProvider(p);}}>{p === 'codex' ? 'Codex' : 'Claude'}</button>)}

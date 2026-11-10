@@ -9,6 +9,8 @@ export type ProjectSummary = {
   cover: string | null;
 };
 
+export type SetupStatus = {provider:'claude'|'codex';ready:boolean;checks:{id:string;name:string;ready:boolean;required:boolean;detail:string}[]};
+
 export type AgentProvider = 'claude' | 'codex';
 export type CodexStatus = ClaudeStatus & {error?: string; loginPending?: boolean};
 export type ClaudeStatus = {
@@ -128,6 +130,7 @@ export const api = {
   codexConnectors: (fresh = false) => fetch(`/api/codex/connectors${fresh ? '?fresh=1' : ''}`).then((r) => json<ConnectorsStatus>(r)),
   loginCodexConnector: (id: 'figma'|'magnific') => fetch(`/api/codex/connectors/${id}/login`,{method:'POST'}).then((r)=>json<{authUrl:string}>(r)),
   checkFigma: (url:string) => fetch('/api/figma/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}).then(r=>json<{ok:boolean;code:string;message:string;nodeId?:string}>(r)),
+  setupStatus: () => fetch('/api/setup/status').then((r) => json<SetupStatus>(r)),
   codexStatus: () => fetch('/api/codex/status').then((r) => json<CodexStatus>(r)),
   codexLogin: () => fetch('/api/codex/login', {method: 'POST'}).then((r) => json<{authUrl: string}>(r)),
   cancelCodexLogin: () => fetch('/api/codex/login/cancel', {method: 'POST'}).then((r) => json<{ok: boolean}>(r)),

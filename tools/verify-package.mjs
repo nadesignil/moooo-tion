@@ -29,7 +29,7 @@ try {
   const app = path.join(temporary, 'Moootion');
   const node = path.join(app, '.runtime', 'node', win ? 'node.exe' : 'bin/node');
   const npm = path.join(app, '.runtime', 'node', win ? 'node_modules/npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js');
-  for (const required of ['server/index.ts', 'studio/index.html', 'runtime/manifest.ts', 'install/executor/Dockerfile', 'docs/astra-method-13.md', '.sdk-version', win ? 'moootion.cmd' : 'moootion']) {
+  for (const required of ['server/index.ts', 'studio/index.html', 'runtime/manifest.ts', 'install/executor/Dockerfile', 'tools/setup.mjs', 'tools/provider-context.mjs', 'tools/setup-status.ts', 'server/setup.ts', 'install/dependencies.sh', 'install/dependencies.ps1', 'docs/installation.md', 'docs/astra-method-13.md', '.sdk-version', win ? 'moootion.cmd' : 'moootion']) {
     await fs.access(path.join(app, required));
   }
   const method = await fs.readFile(path.join(app, 'rules/astra-method-13.md'));
