@@ -25,13 +25,16 @@ export const App: React.FC = () => {
 
   // the start form is shown until Claude was verified on this device once
   useEffect(() => {
-    const saved = localStorage.getItem('moootion:claude');
     let stop = false;
     // the API server may still be starting: retry for a few seconds
     const tick = async (attempt: number) => {
-      const st = await api.claudeStatus().catch(() => null);
+      const st = await api.settings().then(async (s) => {
+        const provider = s.agentProvider;
+        const status = await (provider === 'codex' ? api.codexStatus() : api.claudeStatus());
+        return {...status, saved: provider === 'codex' ? Boolean(s.codexVerifiedAt) : Boolean(localStorage.getItem('moootion:claude'))};
+      }).catch(() => null);
       if (stop) return;
-      if (st) setReady(Boolean(saved) && (st.login || st.apiKey));
+      if (st) setReady(st.saved && (st.login || st.apiKey));
       else if (attempt < 15) setTimeout(() => tick(attempt + 1), 700);
       else setReady(false);
     };

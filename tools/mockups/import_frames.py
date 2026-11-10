@@ -92,9 +92,11 @@ for f in frames:
         px, py = screen['x'] * ss + (screen['w'] * ss - iw) / 2, screen['y'] * ss + 11 * k * ss
         ImageDraw.Draw(pill).rounded_rectangle((px, py, px + iw, py + ih), radius=ih / 2, fill=255)
         pill = pill.resize((w, h), Image.LANCZOS)
-        black = Image.new('RGBA', (w, h), (0, 0, 0, 255))
-        black.putalpha(pill)
-        im.alpha_composite(black)
+        # under the frame: vines and ornaments that cross the screen stay on top of the island
+        island = Image.new('RGBA', (w, h), (0, 0, 0, 255))
+        island.putalpha(pill)
+        island.alpha_composite(im)
+        im = island
 
     out = os.path.join(lib, f['id'])
     os.makedirs(out, exist_ok=True)

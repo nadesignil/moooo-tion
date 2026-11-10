@@ -1,10 +1,26 @@
-# everything a user makes stays on their machine
+# Generated source export: runtime data is private.
 node_modules/
 projects/
-renders/
+temp/
 trash/
+renders/
 out/
 dist/
+docker-data/
 .moootion/
 .runtime/
-*.tmp
+.codex/
+.claude/
+.env
+.env.*
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+**/*.tmp
+**/*.log
+__pycache__/
+coverage/
+.DS_Store
+Thumbs.db

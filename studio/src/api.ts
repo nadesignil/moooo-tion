@@ -9,6 +9,8 @@ export type ProjectSummary = {
   cover: string | null;
 };
 
+export type AgentProvider = 'claude' | 'codex';
+export type CodexStatus = ClaudeStatus & {error?: string; loginPending?: boolean};
 export type ClaudeStatus = {
   login: boolean;
   apiKey: boolean;
@@ -22,7 +24,7 @@ export type ConnectorsStatus = {at: string; model: string; plan?: string; connec
 /** a stopped (or failed) run that «Запустить снова» restarts */
 export type Resumable = {jobId: string; title: string; status: string};
 /** studio settings without secrets */
-export type StudioSettings = {figmaToken: boolean; fastPath: boolean; agentModel: string};
+export type StudioSettings = {agentProvider: AgentProvider; codexVerifiedAt: string | null; figmaToken: boolean; fastPath: boolean; agentModel: string};
 
 export type RenderJob = {
   id: string;
@@ -38,7 +40,9 @@ export type RenderJob = {
 
 export type LogLine = {t: number; kind: 'status' | 'text' | 'tool' | 'todo' | 'error'; text: string};
 export type Tokens = {input: number; output: number; cacheRead: number; cacheWrite: number};
-export type RunMeta = {model?: string; costUsd?: number; durationMs?: number; turns?: number; tokens?: Tokens};
+/** points of the subscription windows a run used (5 hours, week) */
+export type PlanUse = {plan: string | null; fiveHour?: number; week?: number};
+export type RunMeta = {model?: string; costUsd?: number; durationMs?: number; turns?: number; tokens?: Tokens; planUse?: PlanUse};
 /** the agent's spending on one project, over all its runs */
 export type ProjectUsage = {runs: number; costUsd: number; durationMs: number; turns: number; tokens: Tokens; tokenRuns: number};
 /** one item of the agent's checklist (TodoWrite) */
@@ -49,7 +53,9 @@ export type Job = RunMeta & {
   sceneId: string | null;
   kind: 'create' | 'recalc' | 'chat';
   title: string;
-  status: 'running' | 'done' | 'error' | 'stopped';
+  status: 'running' | 'done' | 'error' | 'stopped' | 'blocked';
+  blocker?: {code:string;message:string};
+  stage?: 'preparing-inputs'|'building-poses'|'animating'|'checking'|'waiting-approval'|'waiting-inputs'|'editing';
   startedAt: string;
   finishedAt?: string;
   summary?: string;
@@ -115,6 +121,13 @@ const json = async <T,>(res: Response): Promise<T> => {
 };
 
 export const api = {
+  codexConnectors: (fresh = false) => fetch(`/api/codex/connectors${fresh ? '?fresh=1' : ''}`).then((r) => json<ConnectorsStatus>(r)),
+  loginCodexConnector: (id: 'figma'|'magnific') => fetch(`/api/codex/connectors/${id}/login`,{method:'POST'}).then((r)=>json<{authUrl:string}>(r)),
+  checkFigma: (url:string) => fetch('/api/figma/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}).then(r=>json<{ok:boolean;code:string;message:string;nodeId?:string}>(r)),
+  codexStatus: () => fetch('/api/codex/status').then((r) => json<CodexStatus>(r)),
+  codexLogin: () => fetch('/api/codex/login', {method: 'POST'}).then((r) => json<{authUrl: string}>(r)),
+  cancelCodexLogin: () => fetch('/api/codex/login/cancel', {method: 'POST'}).then((r) => json<{ok: boolean}>(r)),
+  verifyAgent: (provider: AgentProvider) => fetch('/api/agent/verify', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({provider})}).then((r) => json<{ok: boolean; model?: string; error?: string}>(r)),
   claudeStatus: () => fetch('/api/claude/status').then((r) => json<ClaudeStatus>(r)),
   verifyClaude: () =>
     fetch('/api/claude/verify', {method: 'POST'}).then((r) =>
@@ -153,7 +166,7 @@ export const api = {
   },
   resume: (id: string) => fetch(`/api/projects/${id}/resume`, {method: 'POST'}).then((r) => json<{jobId: string}>(r)),
   duplicateProject: (id: string) => fetch(`/api/projects/${id}/duplicate`, {method: 'POST'}).then((r) => json<{projectId: string}>(r)),
-  deleteProject: (id: string) => fetch(`/api/projects/${id}`, {method: 'DELETE'}).then((r) => json<{ok: boolean; trash: string}>(r)),
+  deleteProject: (id: string) => fetch(`/api/projects/${id}`, {method: 'DELETE'}).then((r) => json<{ok: boolean; removedRenders: number; removedArchives: number}>(r)),
   createProject: (form: FormData) => fetch('/api/projects', {method: 'POST', body: form}).then((r) => json<{projectId: string; jobId: string}>(r)),
   recalc: (id: string, sceneId: string | null) =>
     fetch(`/api/projects/${id}/recalc`, {

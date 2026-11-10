@@ -1,0 +1,9 @@
+FROM python:3.12-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir numpy==2.2.6 Pillow==11.2.1 opencv-python-headless==4.11.0.86 scipy==1.15.3
+RUN groupadd -g 1000 worker && useradd -u 1000 -g 1000 -M worker \
+    && mkdir /input /output && chown worker:worker /output
+USER 1000:1000
+WORKDIR /output
+CMD ["python", "-I", "-"]

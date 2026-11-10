@@ -96,7 +96,7 @@ export const Drawer: React.FC = () => {
         </h2>
       </div>
       <div className="drawer-body">
-        {open && tab === 'chat' ? <AgentChat /> : null}
+        {open && tab === 'chat' ? <AgentChat key={project?.id} /> : null}
         {open && tab === 'edits' ? <Edits /> : null}
         {open && tab === 'assets' ? <Assets /> : null}
       </div>

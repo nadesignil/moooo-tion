@@ -190,6 +190,7 @@ export const useStudio = create<State>((set, get) => ({
       const [project, code, codeLayers] = await Promise.all([api.project(id), tryStages(id), api.codeLayers(id).catch(() => [] as string[])]);
       set({
         project,
+        ...(get().project?.id !== id ? {activeJobId: null, job: null, jobLog: [], resumable: null} : {}),
         stages: code.stages ?? {},
         codeError: code.error,
         codeLayers,
@@ -536,19 +537,30 @@ if (import.meta.env.DEV) (globalThis as unknown as {__studio: typeof useStudio})
 
 // ── autosave ───────────────────────────────────────────
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let saveQueue: Promise<unknown> = Promise.resolve();
+const persistProject = (project: Project) => {
+  const pending = saveQueue.catch(() => undefined).then(() => api.saveProject(project));
+  saveQueue = pending;
+  return pending;
+};
+/** Flush the exact preview manifest before the renderer reads it from disk. */
+export const flushProjectSave = async (project: Project) => {
+  if (saveTimer) {clearTimeout(saveTimer); saveTimer = null;}
+  if (useStudio.getState().project === project) useStudio.setState({save: 'saving'});
+  try {
+    await persistProject(project);
+    if (useStudio.getState().project === project) useStudio.setState({save: 'saved'});
+  } catch (error) {
+    if (useStudio.getState().project === project) useStudio.setState({save: 'error'});
+    throw error;
+  }
+};
 const scheduleSave = () => {
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
     const {project} = useStudio.getState();
-    if (!project) return;
-    useStudio.setState({save: 'saving'});
-    try {
-      await api.saveProject(project);
-      // a newer edit may have happened meanwhile
-      if (useStudio.getState().project === project) useStudio.setState({save: 'saved'});
-    } catch {
-      useStudio.setState({save: 'error'});
-    }
+    if (project) void flushProjectSave(project).catch(() => undefined);
   }, 450);
 };
 

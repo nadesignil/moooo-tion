@@ -1,8 +1,9 @@
-import {useMemo, useRef, useState} from 'react';
+import {StudioComposition} from './StudioComposition';
+import {memo, useMemo, useRef, useState} from 'react';
 import {Thumbnail} from '@remotion/player';
 import {IconPlayerPlayFilled} from '@tabler/icons-react';
 import type {Group, Project, Scene} from '../../../runtime/manifest';
-import {ProjectVideo, projectFrames, type Stages} from '../../../runtime';
+import {projectFrames, type Stages} from '../../../runtime';
 import {useAxis, useWheelZoom} from '../axis';
 import {snapToFrame, useStudio} from '../store';
 import {sec2} from '../format';
@@ -16,7 +17,6 @@ const GAP = 11;
 export const SubsceneCards: React.FC = () => {
   const project = useStudio((s) => s.project);
   const stages = useStudio((s) => s.stages);
-  const playhead = useStudio((s) => s.playhead);
   const sceneId = useStudio((s) => s.sceneId);
   const axis = useAxis();
   const wheelRef = useRef<HTMLDivElement>(null);
@@ -26,21 +26,26 @@ export const SubsceneCards: React.FC = () => {
   const cardH = useStudio((s) => s.cardH);
   if (!project || !stages || !axis.view) return <div className="tv cards" ref={wheelRef} style={{height: cardH + 12}} />;
 
-  const items: {scene: Scene; group: Group; off: number; next?: Group}[] = [];
+  const items: {scene: Scene; group: Group; real: Group; off: number; next?: Group}[] = [];
   for (const scene of axis.view.scenes) {
     const off = axis.view.offsets.get(scene.id) ?? 0;
     const whole = {id: `${scene.id}-all`, title: scene.title, from: 0, to: scene.duration};
-    const groups = perScene || !scene.groups.length ? [whole] : scene.groups;
-    groups.forEach((g, i) => items.push({scene, group: g, off, next: groups[i + 1]}));
+    const groups = perScene || !scene.groups.length ? [whole] : [...scene.groups].sort((a, b) => a.from - b.from);
+    // subscenes may overlap (the agent lets one start before the last ends): a card ends where the next begins
+    groups.forEach((g, i) => {
+      const next = groups[i + 1];
+      const shown = next && next.from < g.to ? {...g, to: Math.max(g.from + 1 / project.fps, next.from)} : g;
+      items.push({scene, group: shown, real: g, off, next});
+    });
   }
 
   return (
     <div className="tv cards" ref={wheelRef} style={{height: cardH + 12}}>
       <div className="tv-inner">
-        {items.map(({scene, group, off, next}) => (
-          <Card key={`${scene.id}/${group.id}`} project={project} stages={stages} scene={scene} group={group} off={off} next={next} cardH={cardH} />
+        {items.map(({scene, group, real, off, next}) => (
+          <Card key={`${scene.id}/${group.id}`} project={project} stages={stages} scene={scene} group={group} real={real} off={off} next={next} cardH={cardH} />
         ))}
-        <div className="playhead thin" style={{left: axis.x(playhead), top: -14, bottom: 12}} />
+        <CardsPlayhead />
       </div>
     </div>
   );
@@ -51,14 +56,16 @@ const Card: React.FC<{
   stages: Stages;
   scene: Scene;
   group: Group;
+  /** the subscene as it is in the manifest (the card may be cut short where the next one starts) */
+  real: Group;
   off: number;
   next?: Group;
   cardH: number;
-}> = ({project, stages, scene, group, off, next, cardH: CARD_H}) => {
+}> = ({project, stages, scene, group, real, off, next, cardH: CARD_H}) => {
   const axis = useAxis();
   const setPlayhead = useStudio((s) => s.setPlayhead);
   const playStretch = useStudio((s) => s.playStretch);
-  const playhead = useStudio((s) => s.playhead);
+  const active = useStudio((s) => s.playhead >= off + group.from && s.playhead < off + group.to);
   const [hover, setHover] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -66,10 +73,10 @@ const Card: React.FC<{
   const x1 = axis.x(off + group.to);
   const left = x0 + GAP / 2;
   const width = Math.max(40, x1 - x0 - GAP);
-  const active = playhead >= off + group.from && playhead < off + group.to;
 
-  // cover-fit the 16:9 frame into the card
-  const tw = Math.max(width, (CARD_H * project.width) / project.height);
+  // a landscape frame covers the card; a portrait or square one is shown whole (cover would blow up a strip of it)
+  const portrait = project.height >= project.width;
+  const tw = portrait ? (CARD_H * project.width) / project.height : Math.max(width, (CARD_H * project.width) / project.height);
   const th = (tw * project.height) / project.width;
 
   const fps = project.fps;
@@ -91,14 +98,14 @@ const Card: React.FC<{
         ref={ref}
         className={`card ${active ? 'active' : ''} ${width < 96 ? 'tiny' : width < 170 ? 'narrow' : ''}`}
         style={{left, width, height: CARD_H, borderRadius: Math.min(51, Math.round(CARD_H * 0.24))}}
-        title={`${group.title} · ${sec2(group.from)}–${sec2(group.to)} с`}
+        title={`${group.title} · ${sec2(real.from)}–${sec2(real.to)} с`}
         onMouseMove={(e) => setHover(timeAt(e.clientX))}
         onMouseLeave={() => setHover(null)}
         onClick={(e) => setPlayhead(timeAt(e.clientX))}
       >
         <div className="card-thumb" style={{left: (width - tw) / 2, top: (CARD_H - th) / 2, width: tw, height: th}}>
-          <Thumbnail
-            component={ProjectVideo}
+          <StableThumbnail
+            component={StudioComposition}
             inputProps={inputProps}
             compositionWidth={project.width}
             compositionHeight={project.height}
@@ -127,7 +134,7 @@ const Card: React.FC<{
         ) : null}
         <div className="card-text">
           <small>
-            {sec2(off + group.from)} – {sec2(off + group.to)} с
+            {sec2(off + real.from)} – {sec2(off + real.to)} с
           </small>
           <b>{group.title}</b>
         </div>
@@ -198,3 +205,12 @@ export const CardsGrip: React.FC = () => {
   };
   return <div className="cards-grip" onPointerDown={down} onDoubleClick={() => setCardH(180)} title="Потяните, чтобы изменить высоту превью (двойной клик — по умолчанию)" />;
 };
+
+// Moving the playhead does not rebuild every rich composition on the timeline.
+const StableThumbnail = memo(Thumbnail) as typeof Thumbnail;
+const CardsPlayhead: React.FC = () => {
+  const playhead = useStudio(s => s.playhead);
+  const axis = useAxis();
+  return <div className="playhead thin" style={{left: axis.x(playhead), top: -14, bottom: 12}} />;
+};
+

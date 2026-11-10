@@ -3,6 +3,8 @@ import {api, type ClaudeStatus} from '../api';
 import {useStudio} from '../store';
 import {Checkbox} from './Checkbox';
 import {Modal} from './Modal';
+import {CodexConnectors} from './CodexConnectors';
+import {AgentConnection} from './AgentConnection';
 
 const AGENT_MODELS = [
   ['claude-opus-5-5', 'Opus 5.5'],
@@ -17,6 +19,7 @@ export const SettingsModal: React.FC = () => {
   const [figma, setFigma] = useState<boolean | null>(null);
   const [fast, setFast] = useState(true);
   const [model, setModel] = useState('');
+  const [provider, setProvider] = useState('claude');
   const [token, setToken] = useState('');
   const [saved, setSaved] = useState('');
 
@@ -28,6 +31,7 @@ export const SettingsModal: React.FC = () => {
         setFigma(s.figmaToken);
         setFast(s.fastPath);
         setModel(s.agentModel);
+        setProvider(s.agentProvider);
       })
       .catch(() => undefined);
   }, []);
@@ -42,12 +46,14 @@ export const SettingsModal: React.FC = () => {
   return (
     <Modal title="Настройки" onClose={() => setModal(null)}>
       <div className="form">
-        <div className={`check ${claude?.login || claude?.apiKey ? 'ok' : 'bad'}`}>
+        <AgentConnection onReady={() => location.reload()} />
+        {provider === 'codex' ? <CodexConnectors /> : null}
+        {provider === 'claude' ? <div className={`check ${claude?.login || claude?.apiKey ? 'ok' : 'bad'}`}>
           <span className="dot" />
           <span>Claude Code</span>
           <small>{claude ? (claude.verified ? `подключён · ${claude.verified.model}` : claude.login ? 'вход найден' : 'нет входа') : '…'}</small>
-        </div>
-        <div className={`check ${figma ? 'ok' : ''}`}>
+        </div> : null}
+        {provider === 'claude' ? <><div className={`check ${figma ? 'ok' : ''}`}>
           <span className="dot" />
           <span>Figma</span>
           <small>{figma ? 'токен задан' : 'через коннектор Claude (claude.ai Figma)'}</small>
@@ -72,9 +78,9 @@ export const SettingsModal: React.FC = () => {
             </button>
           ) : null}
         </div>
-        {saved ? <p className="form-note">{saved}</p> : null}
-        <div className="form-field">
-          <span>Модель агента</span>
+        {saved ? <p className="form-note">{saved}</p> : null}</> : null}
+        {provider === 'claude' ? <div className="form-field">
+          <span>Модель Claude</span>
           <div className="seg" style={{alignSelf: 'flex-start'}}>
             {AGENT_MODELS.map(([id, label]) => (
               <button
@@ -94,8 +100,8 @@ export const SettingsModal: React.FC = () => {
             Opus дольше думает и точнее переносит раскадровку; Sonnet быстрее и тратит лимит подписки заметно медленнее.
             Действует со следующего запуска агента.
           </small>
-        </div>
-        <Checkbox
+        </div> : <p className="form-note">Codex использует модель по умолчанию вашего аккаунта.</p>}
+        {provider === 'claude' ? <Checkbox
           checked={fast}
           onChange={async (v) => {
             const st = await api.saveSettings({fastPath: v});
@@ -103,7 +109,7 @@ export const SettingsModal: React.FC = () => {
           }}
           title="Быстрые правки на Sonnet"
           hint="Правки времени, кривых и параметров сначала делает быстрая модель — за секунды и в разы дешевле. Она меняет только project.json; если нужна правка кода, задача сама переходит к основной модели."
-        />
+        /> : null}
         <Checkbox
           checked={autoReplay}
           onChange={setAutoReplay}

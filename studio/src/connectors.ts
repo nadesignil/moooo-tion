@@ -35,7 +35,7 @@ export const connectorLabel = (status: string) =>
   status === 'connected'
     ? 'подключён'
     : status === 'needs-auth'
-      ? 'нужен вход в claude.ai'
+      ? 'нужен вход в аккаунт'
       : status === 'pending'
         ? 'подключается…'
         : status === 'failed'

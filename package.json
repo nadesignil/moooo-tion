@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pngjs": "6.0.5",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.1.2",
@@ -31,6 +32,7 @@
     "@remotion/renderer": "4.0.535",
     "@tabler/icons-react": "^3.49.0",
     "hono": "^4.13.13",
+    "pngjs": "7.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "remotion": "4.0.535",

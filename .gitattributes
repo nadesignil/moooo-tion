@@ -1,6 +1,17 @@
 * text=auto eol=lf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+# Preserve the exact experimentally tested bytes (including CRLF).
+rules/astra-method-13.md -text
 *.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
 *.woff2 binary
+*.ttf binary
+*.otf binary
 *.mp3 binary
+*.mp4 binary

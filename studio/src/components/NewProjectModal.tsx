@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {IconBrandFigma, IconChevronDown, IconChevronRight, IconDeviceMobile, IconMovie, IconMusic, IconPhoto} from '@tabler/icons-react';
 import {api} from '../api';
 import {useStudio} from '../store';
@@ -128,6 +128,8 @@ export const NewProjectModal: React.FC = () => {
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [agentProvider,setAgentProvider] = useState('claude');
+  useEffect(()=>{api.settings().then(s=>setAgentProvider(s.agentProvider)).catch(()=>{});},[]);
 
   const figmaOk = !f.figmaUrl || /figma\.com\/(design|file)\//.test(f.figmaUrl);
   const brief = buildBrief(f);
@@ -164,6 +166,11 @@ export const NewProjectModal: React.FC = () => {
 
   const send = async (form: FormData) => {
     try {
+      const url = String(form.get('figmaUrl') ?? '').trim();
+      if (agentProvider === 'codex' && url) {
+        const result = await api.checkFigma(url);
+        if (!result.ok) throw new Error(result.message);
+      }
       const {projectId, jobId} = await api.createProject(form);
       await loadProjects();
       await openProject(projectId);

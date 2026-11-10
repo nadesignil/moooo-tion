@@ -11,20 +11,22 @@ import {Logo} from './Logo';
 const ConnectionTiles: React.FC = () => {
   const setModal = useStudio((s) => s.setModal);
   const status = useConnectors();
-  const saved = JSON.parse(localStorage.getItem('moootion:claude') ?? 'null') as {model?: string} | null;
+  const [provider, setProvider] = useState('claude');
+  useEffect(() => {api.settings().then((s) => setProvider(s.agentProvider)).catch(() => {});}, []);
+  const saved = JSON.parse(localStorage.getItem(`moootion:${provider}`) ?? 'null') as {model?: string} | null;
   const model = status?.model || saved?.model || '';
   const claudeState = !status ? 'wait' : status.error ? 'bad' : 'ok';
-  const gen = (status?.connectors ?? []).filter((c) => c.id === 'magnific' || (c.id === 'higgsfield' && c.status === 'connected'));
-  if (status && !status.error && !gen.some((c) => c.id === 'magnific')) gen.unshift({id: 'magnific', name: 'Magnific', status: 'missing', tools: 0});
+  const gen = (status?.connectors ?? []).filter((c) => c.id === 'magnific' || (provider === 'codex' && c.id === 'figma') || (c.id === 'higgsfield' && c.status === 'connected'));
+  if (provider === 'claude' && status && !status.error && !gen.some((c) => c.id === 'magnific')) gen.unshift({id: 'magnific', name: 'Magnific', status: 'missing', tools: 0});
 
   return (
     <div className="user">
-      <button className="user-card claude" onClick={() => setModal('settings')} title={status?.error ?? 'Настройки подключения Claude'}>
+      <button className="user-card claude" onClick={() => setModal('settings')} title={status?.error ?? 'Настройки подключения агента'}>
         <span className="user-avatar claude">
-          <ClaudeMark size={20} />
+          {provider === 'codex' ? <IconSparkles size={20} /> : <ClaudeMark size={20} />}
         </span>
         <span className="user-text">
-          <b>Claude</b>
+          <b>{provider === 'codex' ? 'Codex' : 'Claude'}</b>
           <small>{claudeState === 'wait' ? 'проверяю…' : claudeState === 'bad' ? 'нет связи — откройте настройки' : [status?.plan ?? 'подписка', model.replace(/^claude-/, '')].filter(Boolean).join(' · ')}</small>
         </span>
         <span className={`conn-state ${claudeState}`} />
@@ -33,15 +35,15 @@ const ConnectionTiles: React.FC = () => {
         const ok = c.status === 'connected';
         const hint =
           c.status === 'missing'
-            ? 'подключите коннектор в claude.ai'
+            ? provider === 'codex' ? 'подключите в настройках' : 'подключите коннектор в claude.ai'
             : ok
-              ? `генерация · ${c.tools} инструментов`
+              ? `${provider === 'codex' && c.id === 'figma' ? 'чтение макетов' : 'генерация'} · ${c.tools} инструментов`
               : connectorLabel(c.status);
         return (
           <div
             key={c.id}
             className={`user-card gen ${c.id}`}
-            title={
+            title={provider === 'codex' ? `${c.name}: подключение Codex. Управление в настройках студии.` :
               ok
                 ? `${c.name}: коннектор claude.ai. Платные вызовы агент делает только после вашего «Разрешить» в чате.`
                 : `${c.name}: подключите коннектор на claude.ai → Настройки → Коннекторы, затем обновите студию.`
@@ -93,15 +95,15 @@ const ProjectRow: React.FC<{p: ProjectSummary; active: boolean; onToast: (t: str
     if (!confirm) return setConfirm(true);
     setBusy(true);
     try {
-      const {trash} = await api.deleteProject(p.id);
+      await api.deleteProject(p.id);
       const st = useStudio.getState();
       await st.loadProjects();
       if (active) {
         const next = useStudio.getState().projects[0];
         if (next) await openProject(next.id);
-        else useStudio.setState({project: null, stages: null});
+        else useStudio.setState({project: null, stages: null, activeJobId: null, job: null, jobLog: [], resumable: null});
       }
-      onToast(`Проект «${p.title}» удалён — папка лежит в ${trash}`);
+      onToast(`Проект «${p.title}» удалён вместе с файлами и рендерами`);
     } catch (err) {
       onToast(`Не удалось удалить: ${(err as Error).message}`);
       setBusy(false);
@@ -122,9 +124,9 @@ const ProjectRow: React.FC<{p: ProjectSummary; active: boolean; onToast: (t: str
         <button className="icon-btn" title="Копия проекта" onClick={duplicate} disabled={busy}>
           <IconCopy size={16} stroke={1.5} />
         </button>
-        <button className={`icon-btn danger ${confirm ? 'armed' : ''}`} title={confirm ? 'Нажмите ещё раз — удалить' : 'Удалить проект'} onClick={remove} disabled={busy}>
+        <button className={`icon-btn danger ${confirm ? 'armed' : ''}`} title={confirm ? 'Нажмите ещё раз — удалить проект, файлы и рендеры' : 'Удалить проект и его файлы'} onClick={remove} disabled={busy}>
           <IconTrash size={16} stroke={1.5} />
-          {confirm ? <em>Удалить?</em> : null}
+          {confirm ? <em>С файлами?</em> : null}
         </button>
       </span>
       <IconChevronRight className="proj-chevron" size={17} stroke={1.5} />
@@ -169,3 +171,4 @@ export const Sidebar: React.FC<{onToast: (t: string) => void}> = ({onToast}) => 
     </aside>
   );
 };
+

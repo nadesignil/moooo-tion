@@ -1,0 +1,37 @@
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Export safety tests (no model or connector calls)
+        run: node --test tools/publish.test.mjs
+      - name: Guidance, private history and mocked protocol tests
+        run: >-
+          node --import tsx --test
+          server/astra-guidance.test.ts
+          server/project-history-git.test.ts
+          server/codex.test.ts
+          server/codex-choreography.test.ts
+          server/codex-connectors.test.ts
+          server/claude-boundary.test.ts
+      - name: Audit source export without writing an export
+        run: node tools/publish.mjs --audit "$RUNNER_TEMP/moootion-source-audit"
