@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {detectProvider,resolveProvider,initializeProvider,readJson} from './provider-context.mjs';
+import {detectProvider,resolveProvider,initializeProvider,readJson,saveJson} from './provider-context.mjs';
 
 test('detect originating assistant, not installed credentials or incidental environment',()=>{
   assert.equal(detectProvider({CODEX_THREAD_ID:'test'}),'codex');
@@ -55,4 +55,27 @@ test('concurrent first-launch probes persist the same default without temporary-
   const results=await Promise.all(Array.from({length:8},()=>initializeProvider(root,{env:{CODEX_THREAD_ID:'x'}})));
   assert.ok(results.every(p=>p==='codex'));
   assert.equal((await readJson(path.join(root,'.moootion/settings.json'))).agentProvider,'codex');
+});
+
+
+test('atomic settings replacement retries transient locks and preserves the old file on failure', async t => {
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'moootion-setup-lock-'));
+  const file=path.join(root,'settings.json');
+  const originalRename=fs.rename;
+  let attempts=0;
+  try {
+    await saveJson(file,{provider:'claude'});
+    t.mock.method(fs,'rename',async (...args)=>{
+      if(++attempts<=2)throw Object.assign(new Error('temporary sharing violation'),{code:'EPERM'});
+      return originalRename(...args);
+    });
+    await saveJson(file,{provider:'codex'});
+    assert.equal(attempts,3);
+    assert.deepEqual(await readJson(file),{provider:'codex'});
+    t.mock.restoreAll();
+    t.mock.method(fs,'rename',async()=>{throw Object.assign(new Error('disk failure'),{code:'EIO'});});
+    await assert.rejects(saveJson(file,{provider:'claude'}),/disk failure/);
+    assert.deepEqual(await readJson(file),{provider:'codex'});
+    assert.deepEqual(await fs.readdir(root),['settings.json']);
+  } finally {t.mock.restoreAll();await fs.rm(root,{recursive:true,force:true});}
 });
