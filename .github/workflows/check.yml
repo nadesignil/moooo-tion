@@ -42,3 +42,14 @@ jobs:
         run: node tools/publish.mjs --audit "$RUNNER_TEMP/moootion-source-audit"
       - name: Installer shell syntax
         run: bash -n install/install.sh install/moootion.sh install/dependencies.sh
+
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installer defaults, concurrent initialization and atomic writes
+        run: node --test tools/setup.test.mjs

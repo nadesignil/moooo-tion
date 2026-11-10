@@ -26,8 +26,18 @@ export async function readJson(file, fallback = {}) {
 export async function saveJson(file, value) {
   await fs.mkdir(path.dirname(file), {recursive:true});
   const temporary = file + '.' + randomUUID() + '.tmp';
-  await fs.writeFile(temporary, JSON.stringify(value, null, 2) + '\n', {mode:0o600});
-  await fs.rename(temporary, file);
+  try {
+    await fs.writeFile(temporary, JSON.stringify(value, null, 2) + '\n', {mode:0o600});
+    // Windows can temporarily lock the destination while another startup probe reads it.
+    // Keep the old file intact and retry the atomic replacement; never unlink settings.
+    for (let attempt = 0; ; attempt++) {
+      try {await fs.rename(temporary, file); break;}
+      catch (error) {
+        if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 7) throw error;
+        await new Promise(resolve => setTimeout(resolve, 20 * 2 ** Math.min(attempt, 4)));
+      }
+    }
+  } finally {await fs.rm(temporary, {force:true});}
 }
 export async function initializeProvider(root, {explicit, env = process.env} = {}) {
   const file = path.join(root, '.moootion', 'settings.json');
