@@ -23,6 +23,7 @@ jobs:
           - os: windows-latest
             target: win-x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +43,9 @@ jobs:
 
       - name: Package
         run: node tools/package.mjs ${{ matrix.target }}
+
+      - name: Verify extracted package and generate checksum
+        run: node tools/verify-package.mjs ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
