@@ -124,7 +124,7 @@ const uniqueName = async (id: string, name: string) => {
   }
 };
 
-export const addAssets = async (id: string, files: {name: string; data: Buffer}[], role?: string) => {
+export const addAssets = async (id: string, files: {name: string; data: Buffer}[], role?: string, provenance?: Pick<AssetEntry,'source'|'prompt'|'model'|'cost'>) => {
   await fs.mkdir(dirOf(id), {recursive: true});
   const list = await readEntries(id);
   for (const f of files) {
@@ -135,6 +135,7 @@ export const addAssets = async (id: string, files: {name: string; data: Buffer}[
       role: role && ASSET_ROLES[role] ? role : guessRole(name),
       tags: [],
       source: 'import',
+      ...provenance,
       addedAt: new Date().toISOString(),
     });
   }

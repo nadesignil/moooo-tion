@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {ProjectSchema, projectFrames, type Project} from '../runtime/manifest';
-import {PROJECTS, TRASH, projectDir} from './paths';
+import {PROJECTS, TRASH, RENDERS, LEGACY_RENDERS, PROJECT_RENDER_CACHE, projectDir} from './paths';
+import {deleteProjectFiles} from './project-deletion';
 
 export type ProjectSummary = {
   id: string;
@@ -74,19 +75,5 @@ export const duplicateProject = async (id: string, newId: string, title: string)
   return writeProject(newId, {...p, id: newId, title});
 };
 
-/** moves the folder to trash/<id>-<time>; git history keeps it too */
-export const trashProject = async (id: string) => {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  await fs.mkdir(TRASH, {recursive: true});
-  const to = path.join(TRASH, `${id}-${stamp}`);
-  try {
-    await fs.rename(projectDir(id), to);
-  } catch (err) {
-    // Windows: a folder the dev server watches cannot be renamed — copy it, then remove the original
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw err;
-    await fs.cp(projectDir(id), to, {recursive: true});
-    await fs.rm(projectDir(id), {recursive: true, force: true, maxRetries: 8, retryDelay: 250});
-  }
-  return to;
-};
+/** Remove live files and associated renders; historical Git versions remain separate. */
+export const deleteProject = (id: string) => deleteProjectFiles(id, {projects: PROJECTS, renders: [RENDERS, LEGACY_RENDERS], trash: TRASH, caches: [PROJECT_RENDER_CACHE]});

@@ -1,11 +1,13 @@
+import './remotion-temp';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {bundle} from '@remotion/bundler';
 import {renderMedia, renderStill, selectComposition} from '@remotion/renderer';
 import {sceneFrames} from '../runtime/manifest';
 import {readProject} from './projects';
 import {slugify} from './scaffold';
-import {RENDERS, projectDir} from './paths';
+import {RENDERS, PROJECT_RENDER_CACHE, projectDir} from './paths';
 
 /**
  * Headless Chrome's default GL mode draws a WebGL canvas (the shader backgrounds) with a black band where a zoomed
@@ -26,9 +28,17 @@ export type RenderJob = {
   startedAt: string;
 };
 
+const bundleForProject = async (projectId: string, options: {entryPoint: string; publicDir: string}) => {
+  projectDir(projectId); // validate the ID before constructing a cache path
+  const outDir = path.join(PROJECT_RENDER_CACHE, projectId, randomUUID());
+  await fs.mkdir(outDir, {recursive: true});
+  try { return await bundle({...options, outDir}); }
+  catch (error) { await fs.rm(outDir, {recursive: true, force: true}).catch(() => undefined); throw error; }
+};
 const jobs = new Map<string, RenderJob>();
 
 export const getRenderJob = (projectId: string) => jobs.get(projectId) ?? null;
+export const forgetRenderJob = (projectId: string) => jobs.delete(projectId);
 
 export const startRender = async (projectId: string, sceneId?: string): Promise<RenderJob> => {
   const running = jobs.get(projectId);
@@ -48,7 +58,7 @@ export const startRender = async (projectId: string, sceneId?: string): Promise<
     try {
       const dir = projectDir(projectId);
       const project = await readProject(projectId);
-      const serveUrl = await bundle({
+      const serveUrl = await bundleForProject(projectId, {
         entryPoint: path.join(dir, 'src', 'index.ts'),
         publicDir: path.join(dir, 'public'),
       });
@@ -83,7 +93,9 @@ export const startRender = async (projectId: string, sceneId?: string): Promise<
         imageFormat: 'jpeg',
         jpegQuality: 95,
         pixelFormat: 'yuv420p',
-        concurrency: 6,
+        concurrency: 2,
+        offthreadVideoThreads: 1,
+        offthreadVideoCacheSizeInBytes: 128 * 1024 * 1024,
         ...(frameRange ? {frameRange} : {}),
         outputLocation: file,
         onProgress: ({progress}) => {
@@ -107,7 +119,7 @@ export const startRender = async (projectId: string, sceneId?: string): Promise<
 export const renderCover = async (projectId: string) => {
   const dir = projectDir(projectId);
   const project = await readProject(projectId);
-  const serveUrl = await bundle({entryPoint: path.join(dir, 'src', 'index.ts'), publicDir: path.join(dir, 'public')});
+  const serveUrl = await bundleForProject(projectId, {entryPoint: path.join(dir, 'src', 'index.ts'), publicDir: path.join(dir, 'public')});
   const inputProps = {project};
   const composition = await selectComposition({serveUrl, id: 'Project', inputProps, chromiumOptions: CHROMIUM});
   const output = path.join(dir, '.moootion', 'cover.jpg');
@@ -123,4 +135,42 @@ export const renderCover = async (projectId: string) => {
     jpegQuality: 85,
     scale: 320 / composition.width,
   });
+};
+
+/** Agent checks and final renders share exactly the same browser settings. */
+export const renderProjectStill = async (projectId:string,frame:number,output:string,signal?:AbortSignal) => {
+  if(signal?.aborted)throw new Error('stopped');
+  const dir=projectDir(projectId);const project=await readProject(projectId);
+  const serveUrl=await bundleForProject(projectId, {entryPoint:path.join(dir,'src','index.ts'),publicDir:path.join(dir,'public')});
+  const inputProps={project};
+  const composition=await selectComposition({serveUrl,id:'Project',inputProps,chromiumOptions:CHROMIUM});
+  if(!Number.isInteger(frame)||frame<0||frame>=composition.durationInFrames)throw new Error('Кадр вне ролика');
+  if(signal?.aborted)throw new Error('stopped');
+  await fs.mkdir(path.dirname(output),{recursive:true});
+  await renderStill({serveUrl,composition,inputProps,output,frame,imageFormat:'png',scale:1,chromiumOptions:CHROMIUM});
+  if(signal?.aborted)throw new Error('stopped');
+  return {output,frame,width:composition.width,height:composition.height};
+};
+
+/** Codex-only first-stage evidence; existing Claude render calls are unchanged. */
+export const captureCodexPoses = async (projectId:string,signal:AbortSignal) => {
+  const dir=projectDir(projectId);const project=await readProject(projectId);
+  const serveUrl=await bundleForProject(projectId, {entryPoint:path.join(dir,'src','index.ts'),publicDir:path.join(dir,'public')});
+  const inputProps={project};const composition=await selectComposition({serveUrl,id:'Project',inputProps,chromiumOptions:CHROMIUM});
+  const poses:{file:string;scene:string;group:string;title:string;frame:number}[]=[];let from=0;
+  for(const scene of project.scenes){
+    for(const group of scene.groups.length?scene.groups:[{id:'final',title:scene.title,from:0,to:scene.duration}]){
+      if(signal.aborted)throw new Error('stopped');
+      if(poses.length>=30)throw new Error('Контактный лист ограничен 30 позами');
+      const frame=from+Math.max(0,Math.min(sceneFrames(scene,project.fps)-1,Math.round((group.to-0.1)*project.fps)));
+      const safe=(s:string)=>s.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,50);
+      const file=`codex-${safe(scene.id)}-${safe(group.id)}.png`;
+      const output=path.join(dir,'.moootion','poses',file);await fs.mkdir(path.dirname(output),{recursive:true});
+      await renderStill({serveUrl,composition,inputProps,output,frame,imageFormat:'png',chromiumOptions:CHROMIUM});
+      poses.push({file,scene:scene.id,group:group.id,title:`${scene.title} · ${group.title}`,frame});
+    }
+    from+=sceneFrames(scene,project.fps);
+  }
+  await fs.writeFile(path.join(dir,'.moootion','poses','poses.json'),JSON.stringify(poses,null,2));
+  return poses;
 };

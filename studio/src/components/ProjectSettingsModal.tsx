@@ -155,7 +155,7 @@ export const ProjectSettingsModal: React.FC<{onToast?: (t: string) => void}> = (
   };
 
   const NOTES: Record<string, string> = {
-    figma: 'коннектор claude.ai — только чтение',
+    figma: 'подключение агента — только чтение',
     magnific: 'коннектор claude.ai — платные вызовы только с вашего разрешения в чате',
     higgsfield: 'коннектор claude.ai — платные вызовы только с вашего разрешения в чате',
   };
@@ -256,7 +256,7 @@ export const ProjectSettingsModal: React.FC<{onToast?: (t: string) => void}> = (
               <span className="dot" />
               <span>{c.name}</span>
               <small>
-                {c.status === 'connected' ? c.note : c.status === 'missing' ? 'не подключён — claude.ai → Настройки → Коннекторы' : connectorLabel(c.status)}
+                {c.status === 'connected' ? c.note : c.status === 'missing' ? 'не подключён — откройте настройки студии' : connectorLabel(c.status)}
               </small>
             </div>
           ))}

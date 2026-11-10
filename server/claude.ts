@@ -77,7 +77,7 @@ const hasCli = () =>
 
 export const claudeStatus = async (): Promise<ClaudeStatus> => {
   const [login, cli] = await Promise.all([hasAccountLogin(), hasCli()]);
-  return {login, apiKey: Boolean(process.env.ANTHROPIC_API_KEY), cli, verified};
+  return {login, apiKey: Boolean(process.env.ANTHROPIC_API_KEY), cli: cli || Boolean(bundledClaude()), verified};
 };
 
 /**

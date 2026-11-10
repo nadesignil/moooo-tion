@@ -1,8 +1,10 @@
+import {StudioComposition} from './StudioComposition';
 import {Component, useEffect, useMemo, useRef, useState} from 'react';
 import {Player, type PlayerRef} from '@remotion/player';
 import {IconX} from '@tabler/icons-react';
-import {ProjectVideo, isVariants, projectFrames, sceneFrames} from '../../../runtime';
+import {projectFrames} from '../../../runtime';
 import {findAction, sceneOffsets, useStudio} from '../store';
+import {previewRange} from '../previewRange';
 import {ACTION_SIZES} from './ActionPreviewWindow';
 
 export const playerRef: {current: PlayerRef | null} = {current: null};
@@ -32,7 +34,6 @@ export const PreviewWindow: React.FC = () => {
   const stages = useStudio((s) => s.stages);
   const open = useStudio((s) => s.previewOpen);
   const setOpen = useStudio((s) => s.setPreviewOpen);
-  const playhead = useStudio((s) => s.playhead);
   const setPlayhead = useStudio((s) => s.setPlayhead);
   const setPlaying = useStudio((s) => s.setPlaying);
   const selectedLayer = useStudio((s) => s.selectedLayer);
@@ -53,31 +54,25 @@ export const PreviewWindow: React.FC = () => {
     return f ? `${f.scene.id}/${f.action.id}|${JSON.stringify(f.action)}` : '';
   });
   const total = project ? projectFrames(project) : 1;
-  // «Оживление скриншота»: the player loops the selected variant only
+  // «Оживление скриншота»: each variant is its own video — the player gets that one scene only,
+  // The player clock is local; StudioComposition offsets the full render composition.
   const sceneId = useStudio((s) => s.sceneId);
-  const range = useMemo(() => {
-    if (!project || !isVariants(project) || !sceneId) return null;
-    let from = 0;
-    for (const s of project.scenes) {
-      const dur = sceneFrames(s, project.fps);
-      if (s.id === sceneId) return {inFrame: from, outFrame: Math.min(total - 1, from + dur - 1)};
-      from += dur;
-    }
-    return null;
-  }, [project, sceneId, total]);
-  // the Player starts where the playhead was when the window opened; always inside the film
+  const range = useMemo(() => project ? previewRange(project, sceneId) : null, [project, sceneId]);
+  const clip = range?.bounded ?? false;
+  const base = range?.from ?? 0;
+  const frames = range ? range.to - range.from + 1 : total;
+  // the Player starts where the playhead was when the window opened; always inside the clip
   // (the Player validates this prop on every render, so it is clamped whenever the film shrinks)
   const initialFrame = useMemo(
-    () =>
-      Math.min(
-        range?.outFrame ?? total - 1,
-        Math.max(range?.inFrame ?? 0, Math.round(useStudio.getState().playhead * (project?.fps ?? 60))),
-      ),
+    () => Math.min(frames - 1, Math.max(0, Math.round(useStudio.getState().playhead * (project?.fps ?? 60)) - base)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open, project?.id, total, range?.inFrame, range?.outFrame],
+    [open, project?.id, frames, base],
   );
 
-  const inputProps = useMemo(() => (project && stages ? {project, stages} : null), [project, stages]);
+  const inputProps = useMemo(
+    () => (project && stages ? {project, stages, frameOffset: base, highlight: selectedLayer} : null),
+    [project, stages, base, selectedLayer],
+  );
 
   // player → playhead
   useEffect(() => {
@@ -86,11 +81,14 @@ export const PreviewWindow: React.FC = () => {
     // dev only: drive the player from the browser console
     if (import.meta.env.DEV) (globalThis as unknown as {__player: PlayerRef | null}).__player = p;
     if (!p || !project) return;
+    fromPlayer.current = p.getCurrentFrame() + base;
+    stopAt.current = -1;
     // frame events arrive inside React's commit; push them to the store at most once per animation frame
     let raf = 0;
     const onFrame = (e: {detail: {frame: number}}) => {
-      fromPlayer.current = e.detail.frame;
-      if (stopAt.current >= 0 && e.detail.frame >= stopAt.current) {
+      // The player and renderer use the same global frame.
+      fromPlayer.current = e.detail.frame + base;
+      if (stopAt.current >= 0 && fromPlayer.current >= stopAt.current) {
         stopAt.current = -1;
         p.pause();
       }
@@ -111,8 +109,11 @@ export const PreviewWindow: React.FC = () => {
       p.removeEventListener('frameupdate', onFrame);
       p.removeEventListener('play', onPlay);
       p.removeEventListener('pause', onPause);
+      if (playerRef.current === p) playerRef.current = null;
+      setPlaying(false);
     };
-  }, [open, project?.fps, setPlayhead, setPlaying]);
+    // A closed or replaced player must not leave the timeline marked as playing.
+  }, [open, stages, project?.id, sceneId, project?.fps, setPlayhead, setPlaying]);
 
   // an edit of the selected action replays its stretch from the start (after the edit settles)
   const lastSel = useRef('');
@@ -132,7 +133,7 @@ export const PreviewWindow: React.FC = () => {
       const from = Math.max(Math.round(off * fps), Math.round((off + f.action.start) * fps) - pad);
       const to = Math.min(projectFrames(st.project) - 1, Math.round((off + f.action.start + f.action.duration) * fps) + pad);
       stopAt.current = to;
-      p.seekTo(from);
+      p.seekTo(Math.min(frames - 1, Math.max(0, from - base)));
       p.play();
     }, 250);
     return () => clearTimeout(t);
@@ -148,20 +149,23 @@ export const PreviewWindow: React.FC = () => {
       const fps = project.fps;
       const from = Math.min(total - 1, Math.max(0, Math.round(playRange.from * fps)));
       stopAt.current = Math.min(total - 1, Math.max(from, Math.round(playRange.to * fps) - 1));
-      p.seekTo(from);
+      p.seekTo(Math.min(frames - 1, Math.max(0, from - base)));
       p.play();
     });
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playRange?.n, open]);
 
-  // playhead → player (when moved from the timeline)
-  useEffect(() => {
+  // Timeline scrubbing seeks the player without subscribing the whole player tree
+  // to its own 60 fps clock. Keep the complete composition and global frame numbers.
+  useEffect(() => useStudio.subscribe((state, prev) => {
+    if (state.playhead === prev.playhead) return;
     const p = ref.current;
-    if (!p || !project || p.isPlaying()) return;
-    const f = Math.round(playhead * project.fps);
-    if (f !== fromPlayer.current && f !== p.getCurrentFrame()) p.seekTo(f);
-  }, [playhead, project]);
+    if (!p || !state.project || p.isPlaying()) return;
+    const f = Math.round(state.playhead * state.project.fps);
+    const target = Math.min(base + frames - 1, Math.max(base, f));
+    if (f !== fromPlayer.current && target - base !== p.getCurrentFrame()) p.seekTo(target - base);
+  }), [open, base, frames]);
 
   if (!open || !project || !inputProps) return null;
   const w = SIZES[size];
@@ -190,7 +194,8 @@ export const PreviewWindow: React.FC = () => {
    * not full-frame wins; full-frame elements (backgrounds) only when nothing smaller is there.
    */
   const pick = (e: React.MouseEvent) => {
-    const els = document.elementsFromPoint(e.clientX, e.clientY);
+    const els = document.elementsFromPoint(e.clientX, e.clientY).flatMap(el =>
+      el.shadowRoot ? el.shadowRoot.elementsFromPoint(e.clientX, e.clientY) : [el]);
     const sceneEl = els.find((el) => el.hasAttribute('data-moootion-scene'));
     if (!sceneEl) return;
     const box = sceneEl.getBoundingClientRect();
@@ -238,16 +243,14 @@ export const PreviewWindow: React.FC = () => {
           <IconX size={16} />
         </button>
       </div>
-      {selectedLayer ? (
-        <style>{`.preview [data-moootion-layer=${JSON.stringify(selectedLayer.name)}]{outline:2px solid #b4db47;outline-offset:-2px}`}</style>
-      ) : null}
       <div className="preview-stage" onClick={pick} title="Клик по объекту — выбрать его слой">
-        <PlayerBoundary resetKey={`${project.id}:${total}:${range?.inFrame ?? ''}`}>
+        <PlayerBoundary resetKey={`${project.id}:${total}:${base}`}>
           <Player
+            key={`${project.id}:${sceneId ?? 'all'}`}
             ref={ref}
-            component={ProjectVideo}
+            component={StudioComposition}
             inputProps={inputProps}
-            durationInFrames={total}
+            durationInFrames={frames}
             compositionWidth={project.width}
             compositionHeight={project.height}
             fps={project.fps}
@@ -255,9 +258,7 @@ export const PreviewWindow: React.FC = () => {
             clickToPlay={false}
             doubleClickToFullscreen
             initialFrame={initialFrame}
-            inFrame={range?.inFrame ?? null}
-            outFrame={range?.outFrame ?? null}
-            loop={Boolean(range)}
+            loop={Boolean(clip)}
             style={{width: w, height: h}}
           />
         </PlayerBoundary>

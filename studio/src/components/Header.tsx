@@ -2,7 +2,7 @@ import {useEffect, useMemo, useState} from 'react';
 import {IconAdjustmentsHorizontal, IconChevronLeft, IconChevronRight, IconClock, IconDownload, IconEye, IconHistory} from '@tabler/icons-react';
 import {api, type RenderJob, type Version} from '../api';
 import {isVariants} from '../../../runtime/manifest';
-import {projectSeconds, useStudio} from '../store';
+import {flushProjectSave, projectSeconds, useStudio} from '../store';
 import {sec} from '../format';
 
 export const Header: React.FC<{onToast: (t: string) => void}> = ({onToast}) => {
@@ -26,14 +26,29 @@ export const Header: React.FC<{onToast: (t: string) => void}> = ({onToast}) => {
   const sig = useMemo(() => {
     if (!project) return '';
     const scenes = project.scenes.map(({backlog: _backlog, ...scene}) => scene);
-    return `${codeVersion}|${project.fps}|${project.width}x${project.height}|${JSON.stringify(scenes)}`;
+    return `${codeVersion}|${project.fps}|${project.width}x${project.height}|${JSON.stringify({scenes, screen: project.screen, settings: project.settings})}`;
   }, [project, codeVersion]);
 
   useEffect(() => {
-    if (!project || !job || job.status === 'done' || job.status === 'error') return;
-    const id = setInterval(async () => setJob(await api.renderStatus(project.id)), 800);
-    return () => clearInterval(id);
-  }, [project, job]);
+    const id = project?.id;
+    setJob(null); setRenderedSig(null);
+    if (!id) return;
+    let cancelled = false;
+    api.renderStatus(id).then(result => {
+      if (!cancelled) setJob(current => current?.projectId === id ? current : result);
+    }).catch(() => {});
+    return () => {cancelled = true;};
+  }, [project?.id]);
+
+  useEffect(() => {
+    const id = project?.id;
+    if (!id || !job || job.projectId !== id || job.status === 'done' || job.status === 'error') return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      api.renderStatus(id).then(result => {if (!cancelled) setJob(result);}).catch(() => {});
+    }, 800);
+    return () => {cancelled = true; clearInterval(timer);};
+  }, [project?.id, job?.id, job?.status]);
 
   if (!project) return <header className="header" />;
   const backlog = project.scenes.reduce((n, s) => n + s.backlog.length, 0);
@@ -76,9 +91,12 @@ export const Header: React.FC<{onToast: (t: string) => void}> = ({onToast}) => {
   const fresh =
     ownJob?.status === 'done' && ownJob.url && renderedSig === sig && !activeJobId && ownJob.sceneId === variantId ? ownJob : null;
 
+  const downloadable = ownJob?.status === 'done' && ownJob.url && ownJob.sceneId === variantId ? ownJob : null;
+
   const render = async () => {
     if (busy) return;
     try {
+      await flushProjectSave(project);
       setRenderedSig(sig);
       setJob(await api.startRender(project.id, variantId));
     } catch (e) {
@@ -144,14 +162,15 @@ export const Header: React.FC<{onToast: (t: string) => void}> = ({onToast}) => {
         >
           {backlog ? `Пересчитать · ${backlog}` : resumable && !activeJobId ? 'Запустить снова' : 'Пересчитать'}
         </button>
-        {fresh ? (
+        {ownJob?.status === 'error' ? <span role="alert" className="stat mark warn" title={ownJob.error}>Рендер не завершён — ошибка</span> : null}
+        {downloadable ? (
           <a
             className="pill lime"
-            href={`${fresh.url}?download=1&as=${encodeURIComponent(`${project.title}${variantTitle ? ` · ${variantTitle}` : ''}.mp4`)}`}
+            href={`${downloadable.url}?download=1&as=${encodeURIComponent(`${project.title}${variantTitle ? ` · ${variantTitle}` : ''}.mp4`)}`}
             download
-            title="Скачать готовое видео (mp4)"
+            title={fresh ? "Скачать готовое видео (mp4)" : "Скачать последний готовый рендер; он может отличаться от текущих правок"}
           >
-            <IconDownload size={16} stroke={1.5} /> Скачать видео
+            <IconDownload size={16} stroke={1.5} /> {fresh ? 'Скачать видео' : 'Скачать последний рендер'}
           </a>
         ) : null}
         <button

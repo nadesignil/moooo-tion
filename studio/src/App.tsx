@@ -3,6 +3,7 @@ import {api} from './api';
 import {useStudio} from './store';
 import {useShortcuts} from './shortcuts';
 import {useJobFollow} from './jobFollow';
+import {ConnectionBanner} from './components/ConnectionBanner';
 import {ActionPreviewWindow} from './components/ActionPreviewWindow';
 import {Drawer} from './components/Drawer';
 import {Header} from './components/Header';
@@ -23,15 +24,18 @@ import {CardsGrip, SubsceneCards} from './components/SubsceneCards';
 export const App: React.FC = () => {
   const [ready, setReady] = useState<boolean | null>(null);
 
-  // the start form is shown until Claude was verified on this device once
+  // Setup can be reopened after installation even when the account was verified before.
   useEffect(() => {
-    const saved = localStorage.getItem('moootion:claude');
     let stop = false;
     // the API server may still be starting: retry for a few seconds
     const tick = async (attempt: number) => {
-      const st = await api.claudeStatus().catch(() => null);
+      const st = await api.settings().then(async (s) => {
+        const provider = s.agentProvider;
+        const status = await (provider === 'codex' ? api.codexStatus() : api.claudeStatus());
+        return {...status, saved: provider === 'codex' ? Boolean(s.codexVerifiedAt) : Boolean(localStorage.getItem('moootion:claude'))};
+      }).catch(() => null);
       if (stop) return;
-      if (st) setReady(Boolean(saved) && (st.login || st.apiKey));
+      if (st) setReady(!new URLSearchParams(location.search).has('setup') && st.saved && (st.login || st.apiKey));
       else if (attempt < 15) setTimeout(() => tick(attempt + 1), 700);
       else setReady(false);
     };
@@ -152,6 +156,7 @@ const Workspace: React.FC = () => {
       <Sidebar onToast={showToast} />
       <main className="main" style={{'--drawer-offset': `${drawerOpen ? drawerH + 12 : 64}px`} as React.CSSProperties}>
         <Header onToast={showToast} />
+        <ConnectionBanner />
         <div className="body" ref={bodyRef}>
           {project ? (
             <>

@@ -1,7 +1,8 @@
+import {StudioComposition} from './StudioComposition';
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {Player, type PlayerRef} from '@remotion/player';
 import {IconX} from '@tabler/icons-react';
-import {ProjectVideo, projectFrames} from '../../../runtime';
+import {projectFrames} from '../../../runtime';
 import {findAction, sceneOffsets, useStudio, type PreviewSize} from '../store';
 import {sec2} from '../format';
 
@@ -22,6 +23,7 @@ export const ActionPreviewWindow: React.FC = () => {
   const setPref = useStudio((s) => s.setActionPreview);
   const setPlayhead = useStudio((s) => s.setPlayhead);
   const ref = useRef<PlayerRef>(null);
+  const mainPreviewOpen = useStudio(s => s.previewOpen);
   const [pos, setPos] = useState<{x: number; y: number} | null>(null);
   const inputProps = useMemo(() => (project && stages ? {project, stages} : null), [project, stages]);
 
@@ -47,10 +49,18 @@ export const ActionPreviewWindow: React.FC = () => {
       const p = ref.current;
       if (!p) return;
       p.seekTo(from);
-      p.play();
+      if (!mainPreviewOpen) p.play();
     }, 220);
     return () => clearTimeout(t);
-  }, [sig, from, actionKey]);
+  }, [sig, from, actionKey, mainPreviewOpen]);
+
+  // Only one live composition plays at a time; the action remains available as a still.
+  useEffect(() => {
+    const p = ref.current;
+    if (!p) return;
+    if (mainPreviewOpen) p.pause();
+    else if (pref.open) p.play();
+  }, [mainPreviewOpen, pref.open, actionKey]);
 
   // dev only: lets the browser console check the restart
   useEffect(() => {
@@ -94,7 +104,7 @@ export const ActionPreviewWindow: React.FC = () => {
       <Player
         key={actionKey}
         ref={ref}
-        component={ProjectVideo}
+        component={StudioComposition}
         inputProps={inputProps}
         durationInFrames={total}
         compositionWidth={project.width}
@@ -104,7 +114,7 @@ export const ActionPreviewWindow: React.FC = () => {
         outFrame={Math.max(from + 1, to)}
         initialFrame={from}
         loop
-        autoPlay
+        autoPlay={!mainPreviewOpen}
         initiallyMuted
         clickToPlay={false}
         style={{width: w, height: h}}

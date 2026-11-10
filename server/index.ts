@@ -5,8 +5,8 @@ import path from 'node:path';
 import os from 'node:os';
 import {serve} from '@hono/node-server';
 import {Hono} from 'hono';
-import {LIBRARY, RENDERS, ROOT, projectDir} from './paths';
-import {duplicateProject, listProjects, readProject, trashProject, writeProject} from './projects';
+import {LIBRARY, RENDERS, LEGACY_RENDERS, ROOT, projectDir} from './paths';
+import {duplicateProject, listProjects, readProject, deleteProject, writeProject} from './projects';
 import {scaffoldProject, scaffoldScreenProject, uniqueId} from './scaffold';
 import {BackgroundSchema, ScreenTemplateSchema, type ProjectSettings, type ScreenTemplate} from '../runtime/manifest';
 import {publicSettings, updateSettings} from './settings';
@@ -25,12 +25,50 @@ app.onError((err, c) => {
   return c.json({error: err.message}, 500);
 });
 
+app.get('/api/setup/status', async (c) => c.json(await (await import('./setup')).setupStatus()));
+
 // ── Claude ─────────────────────────────────────────────
 app.get('/api/claude/status', async (c) => c.json(await (await claude()).claudeStatus()));
 app.post('/api/claude/verify', async (c) => c.json(await (await claude()).verifyClaude()));
-app.get('/api/connectors', async (c) => c.json(await (await claude()).connectorsStatus(c.req.query('fresh') === '1')));
+app.get('/api/connectors', async (c) => {
+  const {readSettings} = await import('./settings');
+  if ((await readSettings()).agentProvider === 'codex') {
+    const st = await (await import('./codex')).codexStatus();
+    const result = await (await import('./codex-connectors')).codexConnectorsStatus(c.req.query('fresh') === '1');
+    return c.json({...result, model:st.verified?.model ?? ''});
+  }
+  return c.json(await (await claude()).connectorsStatus(c.req.query('fresh') === '1'));
+});
+
+// ── Codex account login (official app-server owns credentials and callback) ──
+const codex = () => import('./codex');
+app.get('/api/codex/executor', async (c) => {
+  const startup=(await import('./executor-startup')).executorStartupState();
+  const actual=await (await import('./sandbox-executor')).sandboxStatus();
+  return c.json({...actual,...(!actual.ready && startup.phase==='unavailable' ? {reason:startup.reason} : {}),startup});
+});
+app.get('/api/codex/status', async (c) => c.json(await (await codex()).codexStatus()));
+app.post('/api/codex/login', async (c) => c.json(await (await codex()).startCodexLogin()));
+app.post('/api/codex/login/cancel', async (c) => c.json(await (await codex()).cancelCodexLogin()));
+app.post('/api/codex/connectors/:id/login', async (c) => {
+  const m = await import('./codex-connectors');
+  return c.json(await m.loginCodexConnector(m.connectorId(c.req.param('id'))));
+});
+app.get('/api/codex/connectors', async (c) => c.json(await (await import('./codex-connectors')).codexConnectorsStatus(c.req.query('fresh') === '1')));
+app.post('/api/agent/verify', async (c) => {
+  const {provider} = await c.req.json();
+  if (provider !== 'claude' && provider !== 'codex') return c.json({error: 'Неизвестный агент'}, 400);
+  const result = provider === 'codex' ? await (await codex()).verifyCodex() : await (await claude()).verifyClaude();
+  if (result.ok) await updateSettings({agentProvider: provider, ...(provider === 'codex' ? {codexVerifiedAt: new Date().toISOString()} : {})});
+  return c.json(result);
+});
 
 // ── Projects ───────────────────────────────────────────
+app.post('/api/figma/check', async (c) => {
+  const b = await c.req.json();
+  if (typeof b.url !== 'string') return c.json({error:'Нужна ссылка Figma'},400);
+  return c.json(await (await import('./figma-input')).checkFigma(b.url));
+});
 app.get('/api/projects', async (c) => c.json(await listProjects()));
 app.get('/api/projects/:id', async (c) => c.json(await readProject(c.req.param('id'))));
 app.put('/api/projects/:id', async (c) => c.json(await writeProject(c.req.param('id'), await c.req.json())));
@@ -47,10 +85,14 @@ app.post('/api/projects/:id/duplicate', async (c) => {
 app.delete('/api/projects/:id', async (c) => {
   const id = c.req.param('id');
   if ((await jobsMod()).runningJob(id)) return c.json({error: 'Агент сейчас работает в этом проекте — остановите его'}, 409);
-  const to = await trashProject(id);
+  const renderer = await render();
+  if (['bundling', 'rendering'].includes(renderer.getRenderJob(id)?.status ?? '')) return c.json({error: 'Проект сейчас рендерится — дождитесь окончания'}, 409);
+  await readProject(id);
+  const removed = await deleteProject(id);
+  renderer.forgetRenderJob(id);
   // the deletion is a version too: git keeps everything up to it
   await (await import('./git')).snapshot(id, 'проект удалён').catch(() => undefined);
-  return c.json({ok: true, trash: path.relative(path.dirname(path.dirname(to)), to)});
+  return c.json({ok: true, ...removed});
 });
 
 // ── Render ─────────────────────────────────────────────
@@ -281,7 +323,9 @@ const createScreenProject = async (
   }
   const {startJob} = await jobsMod();
   const {createScreenPrompt} = await promptMod();
-  const prompt = createScreenPrompt({title, variants: screen.variants, references, music, musicFrom: musicFrom(body).from});
+  const basePrompt = createScreenPrompt({title, variants: screen.variants, references, music, musicFrom: musicFrom(body).from});
+  const codexScreen = (await (await import('./settings')).readSettings()).agentProvider === 'codex';
+  const prompt = codexScreen ? basePrompt + '\nСобери экран и сразу реализуй завершённую анимацию в этом же запуске. Отдельного этапа статичных поз и ожидания их утверждения нет. Исходники Figma подготовит студия. Проверь промежуточные кадры и studio_check.' : basePrompt;
   await fs.mkdir(path.join(dir, '.moootion'), {recursive: true});
   await fs.writeFile(path.join(dir, '.moootion', 'brief.md'), prompt, 'utf8');
   const job = await startJob({
@@ -665,9 +709,10 @@ app.post('/api/projects/:id/background-image', async (c) => {
 });
 
 app.get('/renders/:name', async (c) => {
-  const file = path.resolve(RENDERS, c.req.param('name'));
-  if (!file.startsWith(RENDERS)) return c.text('forbidden', 403);
-  const res = await sendFile(file, c.req.raw).catch(() => null);
+  const name = c.req.param('name');
+  if (name !== path.basename(name) || /[\\/]/.test(name)) return c.text('forbidden',403);
+  const file = path.join(RENDERS,name);
+  const res = await sendFile(file,c.req.raw).catch(() => null) ?? await sendFile(path.join(LEGACY_RENDERS,name),c.req.raw).catch(() => null);
   if (!res) return c.text('not found', 404);
   // ?download=1&as=<file name> — save to disk instead of playing in the tab
   if (c.req.query('download')) {
@@ -680,6 +725,8 @@ app.get('/renders/:name', async (c) => {
 const port = Number(process.env.MOOOTION_API_PORT ?? 8787);
 serve({fetch: app.fetch, port}, () => {
   console.log(`moootion api → http://localhost:${port}`);
+  // Covers npm dev/start/server and both packaged launchers without changing Claude's runner.
+  void import('./startup-tools').then(m=>m.prepareStudioTools()).catch(err=>console.error('tools startup failed',err));
   jobsMod()
     .then((m) => m.recoverInterruptedJobs())
     .catch((err) => console.error('job recovery failed', err));

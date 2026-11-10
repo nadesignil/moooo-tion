@@ -54,6 +54,8 @@ type State = {
   /** the followed job and its log so far (filled by useJobFollow, read by the chat) */
   job: Job | null;
   jobLog: LogLine[];
+  connectionNotice: import('../../runtime/connection-status').ConnectionStatus | null;
+  transportError: string | null;
   /** bumped when a job ends: the chat refetches its history */
   chatVersion: number;
   /** bumped whenever the agent changed the project's code/manifest (job finished, rollback) */
@@ -169,6 +171,8 @@ export const useStudio = create<State>((set, get) => ({
   resumable: null,
   job: null,
   jobLog: [],
+  connectionNotice: null,
+  transportError: null,
   chatVersion: 0,
   codeVersion: 0,
   drawerH: 520,
@@ -190,6 +194,7 @@ export const useStudio = create<State>((set, get) => ({
       const [project, code, codeLayers] = await Promise.all([api.project(id), tryStages(id), api.codeLayers(id).catch(() => [] as string[])]);
       set({
         project,
+        ...(get().project?.id !== id ? {activeJobId: null, job: null, jobLog: [], resumable: null, connectionNotice: null, transportError: null} : {}),
         stages: code.stages ?? {},
         codeError: code.error,
         codeLayers,
@@ -240,9 +245,9 @@ export const useStudio = create<State>((set, get) => ({
   setModal: (modal) => set({modal}),
   // each tab opens at its own height: the chat as tall as it gets, the lists keep the cards in view
   setPanelTab: (panelTab) => set((s) => ({panelTab, panelOpen: true, drawerH: s.drawerHeights[panelTab] ?? defaultDrawerH(panelTab)})),
-  setActiveJob: (activeJobId) => set({activeJobId, ...(activeJobId ? {resumable: null} : {job: null, jobLog: []})}),
+  setActiveJob: (activeJobId) => set({activeJobId, ...(activeJobId ? {resumable: null, connectionNotice: null} : {job: null, jobLog: []})}),
   setResumable: (resumable) => set({resumable}),
-  setJobState: (job, jobLog) => set({job, jobLog}),
+  setJobState: (job, jobLog) => set({job, jobLog, ...(job?.status === 'done' ? {connectionNotice:null} : job?.connection ? {connectionNotice:job.connection} : {})}),
   bumpChat: () => set((s) => ({chatVersion: s.chatVersion + 1})),
   setDrawerH: (h) => {
     const drawerH = Math.round(Math.min(maxDrawerH(), Math.max(240, h)));
@@ -536,19 +541,30 @@ if (import.meta.env.DEV) (globalThis as unknown as {__studio: typeof useStudio})
 
 // ── autosave ───────────────────────────────────────────
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let saveQueue: Promise<unknown> = Promise.resolve();
+const persistProject = (project: Project) => {
+  const pending = saveQueue.catch(() => undefined).then(() => api.saveProject(project));
+  saveQueue = pending;
+  return pending;
+};
+/** Flush the exact preview manifest before the renderer reads it from disk. */
+export const flushProjectSave = async (project: Project) => {
+  if (saveTimer) {clearTimeout(saveTimer); saveTimer = null;}
+  if (useStudio.getState().project === project) useStudio.setState({save: 'saving'});
+  try {
+    await persistProject(project);
+    if (useStudio.getState().project === project) useStudio.setState({save: 'saved'});
+  } catch (error) {
+    if (useStudio.getState().project === project) useStudio.setState({save: 'error'});
+    throw error;
+  }
+};
 const scheduleSave = () => {
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
     const {project} = useStudio.getState();
-    if (!project) return;
-    useStudio.setState({save: 'saving'});
-    try {
-      await api.saveProject(project);
-      // a newer edit may have happened meanwhile
-      if (useStudio.getState().project === project) useStudio.setState({save: 'saved'});
-    } catch {
-      useStudio.setState({save: 'error'});
-    }
+    if (project) void flushProjectSave(project).catch(() => undefined);
   }, 450);
 };
 

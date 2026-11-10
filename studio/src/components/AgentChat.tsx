@@ -188,7 +188,7 @@ export const AgentChat: React.FC = () => {
             {job.approvals?.map((a) => <ApprovalCard key={a.id} jobId={job.id} a={a} onError={setError} />)}
             <div className="job-bar">
               <span className="job-dot" />
-              <span>{job.title}</span>
+              <span>{job.title}{job.stage ? ` · ${{'preparing-inputs':'исходники','building-poses':'сборка экрана','animating':'анимация','checking':'проверка','waiting-approval':'ждёт утверждения','waiting-inputs':'ждёт исходники','editing':'правка'}[job.stage]}` : ''}</span>
               <span className="job-time">{elapsed(job.startedAt)}</span>
               <button className="job-tools-toggle" onClick={() => setShowTools(!showTools)}>
                 {showTools ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />} действия агента · {tools.length}
@@ -490,6 +490,7 @@ const runText = (m: RunMeta) => {
   if (m.costUsd != null) parts.push(usd(m.costUsd));
   if (m.turns) parts.push(`${m.turns} шаг.`);
   if (m.tokens) parts.push(`${tokens(tokenSum(m.tokens))} ток.`);
+  if (m.planUse?.fiveHour != null) parts.push(`${String(m.planUse.fiveHour).replace('.', ',')} % окна 5 ч`);
   if (m.model) parts.push(m.model.replace(/^claude-/, '').replace(/-\d.*$/, ''));
   return parts.join(' · ');
 };
@@ -499,6 +500,9 @@ const runTitle = (m: RunMeta) =>
   [
     m.model ? `Модель: ${m.model}` : '',
     m.tokens ? `Токены: ${tokenBreakdown(m.tokens)}` : '',
+    m.planUse
+      ? `Подписка ${m.planUse.plan ?? ''}: ${m.planUse.fiveHour ?? '?'} % окна 5 часов, ${m.planUse.week ?? '?'} % недельного лимита`
+      : '',
     m.costUsd == null && m.tokens ? 'Стоимость неизвестна: прогон остановлен до итога' : '',
   ]
     .filter(Boolean)

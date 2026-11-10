@@ -22,6 +22,6 @@ export default defineConfig({
       '/library': API,
       '/renders': API,
     },
-    watch: {ignored: ['**/project.json', '**/renders/**', '**/out/**', '**/.moootion/**']},
+    watch: {ignored: ['**/project.json', '**/renders/**', '**/temp/**', '**/docker-data/**', '**/out/**', '**/.moootion/**']},
   },
 });

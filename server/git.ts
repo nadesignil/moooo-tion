@@ -1,41 +1,12 @@
-import {execFile} from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {ROOT} from './paths';
+import {createProjectGit} from './project-history-git';
 
-// Every agent run is wrapped in two commits scoped to the project folder,
-// so any result can be rolled back.
-const git = (args: string[]) =>
-  new Promise<string>((resolve, reject) => {
-    execFile('git', ['-C', ROOT, ...args], {maxBuffer: 10 * 1024 * 1024}, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr || err.message));
-      else resolve(stdout.trim());
-    });
-  });
-
-let identityChecked = false;
-const ensureIdentity = async () => {
-  if (identityChecked) return;
-  // a fresh install has no repository yet: the snapshots live in a local one, never pushed anywhere
-  const inside = await git(['rev-parse', '--is-inside-work-tree']).catch(() => '');
-  if (inside !== 'true') {
-    await git(['init', '-q']);
-    // only projects/ is ever committed; the app's own folders stay out of `git status`
-    await fs
-      .appendFile(path.join(ROOT, '.git', 'info', 'exclude'), '\n/node_modules/\n/.runtime/\n/renders/\n/trash/\n/out/\n')
-      .catch(() => undefined);
-  }
-  // restore versions byte for byte (no CRLF conversion on Windows)
-  await git(['config', 'core.autocrlf', 'false']).catch(() => undefined);
-  const name = await git(['config', 'user.name']).catch(() => '');
-  if (!name) {
-    await git(['config', 'user.name', 'Moootion Studio']);
-    await git(['config', 'user.email', 'studio@moootion.local']);
-  }
-  identityChecked = true;
-};
-
-const rel = (projectId: string) => path.posix.join('projects', projectId);
+const history = createProjectGit(ROOT);
+const git = history.run;
+const ensureIdentity = history.ensure;
+const rel = history.relative;
 
 /** commit the project folder (even if nothing changed) and return the commit hash */
 export const snapshot = async (projectId: string, message: string) => {
@@ -119,6 +90,7 @@ const RS = String.fromCharCode(0x1e);
 
 /** every snapshot of the project, newest first; `current` = the working folder matches it */
 export const listVersions = async (projectId: string): Promise<{dirty: boolean; versions: Version[]}> => {
+  await ensureIdentity();
   const out = await git(['log', '-n', '200', '--format=%H%x1f%cI%x1f%s%x1f%b%x1e', '--', rel(projectId)]).catch(() => '');
   const jobs = await jobsByCommit(projectId);
   const list: Version[] = [];

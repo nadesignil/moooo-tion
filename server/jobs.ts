@@ -14,8 +14,32 @@ export type LogLine = {t: number; kind: 'status' | 'text' | 'tool' | 'todo' | 'e
 
 /** tokens of a run, summed over the model's messages (cache reads are most of a long run) */
 export type Tokens = {input: number; output: number; cacheRead: number; cacheWrite: number};
+/**
+ * The subscription windows a run used, in percentage points of the window (claude.ai plan limits:
+ * 5 hours and the week), measured before and after the run. Absent with an API key.
+ */
+export type PlanUse = {plan: string | null; fiveHour?: number; week?: number};
 /** what a run cost: shown under the agent's reply. `tokens` is counted even when the run is stopped */
-export type RunMeta = {model?: string; costUsd?: number; durationMs?: number; turns?: number; tokens?: Tokens};
+export type RunMeta = {model?: string; costUsd?: number; durationMs?: number; turns?: number; tokens?: Tokens; planUse?: PlanUse};
+
+type Windows = {plan: string | null; fiveHour: number | null; week: number | null};
+/** the plan windows right now — the SDK's experimental /usage call, so any failure is just «unknown» */
+const planWindows = async (q: {usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: (o: {skipBehaviors?: boolean}) => Promise<unknown>}): Promise<Windows | null> => {
+  try {
+    const call = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?.({skipBehaviors: true});
+    if (!call) return null;
+    const r = (await Promise.race([call, new Promise((ok) => setTimeout(() => ok(null), 8000))])) as {
+      subscription_type: string | null;
+      rate_limits: {five_hour?: {utilization: number | null} | null; seven_day?: {utilization: number | null} | null} | null;
+    } | null;
+    if (!r?.rate_limits) return null;
+    return {plan: r.subscription_type, fiveHour: r.rate_limits.five_hour?.utilization ?? null, week: r.rate_limits.seven_day?.utilization ?? null};
+  } catch {
+    return null;
+  }
+};
+/** points used between two readings; a window that reset during the run gives no number */
+const spent = (a: number | null | undefined, b: number | null | undefined) => (a != null && b != null && b >= a ? Math.round((b - a) * 10) / 10 : undefined);
 
 const NO_TOKENS: Tokens = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
 const addTokens = (a: Tokens, b: Tokens): Tokens => ({
@@ -41,12 +65,15 @@ export type Approval = {
 };
 
 export type Job = RunMeta & {
+  connection?: import('../runtime/connection-status').ConnectionStatus;
   id: string;
   projectId: string;
   sceneId: string | null;
   kind: JobKind;
   title: string;
-  status: 'running' | 'done' | 'error' | 'stopped';
+  status: 'running' | 'done' | 'error' | 'stopped' | 'blocked';
+  blocker?: {code:string;message:string};
+  stage?: 'preparing-inputs'|'building-poses'|'animating'|'checking'|'waiting-approval'|'waiting-inputs'|'editing';
   startedAt: string;
   finishedAt?: string;
   summary?: string;
@@ -217,7 +244,7 @@ const FIGMA_READ = new Set([
 // Magnific connector (claude.ai «Magnific»): reading is free, everything else spends credits
 const isMagnific = (toolName: string) => /^mcp__.*magnific/i.test(toolName);
 const MAGNIFIC_READ = new Set(['account_balance', 'simulate_cost', 'creations_get', 'creations_show', 'creations_wait']);
-const magnificIsRead = (name: string) => MAGNIFIC_READ.has(name) || /_(list|show|get|status|search)$/.test(name) || /^(list|get|search)_/.test(name);
+export const magnificIsRead = (name: string) => MAGNIFIC_READ.has(name) || /_(list|show|get|status|search)$/.test(name) || /^(list|get|search)_/.test(name);
 
 const MAGNIFIC_WHAT: Record<string, string> = {
   images_generate: 'Картинка',
@@ -227,7 +254,7 @@ const MAGNIFIC_WHAT: Record<string, string> = {
   models3d_generate: '3D-модель',
 };
 /** the approval card's first line: what will be made, from the call's input */
-const describePaid = (name: string, input: Record<string, unknown>) => {
+export const describePaid = (name: string, input: Record<string, unknown>) => {
   const kind = MAGNIFIC_WHAT[name] ?? (/audio/.test(name) ? 'Звук' : name.replace(/_/g, ' '));
   const prompt = input.prompt ?? input.text ?? input.description;
   const size = [input.aspect_ratio, input.resolution, input.size, input.duration ? `${input.duration} с` : '', input.num_images || input.count ? `×${input.num_images ?? input.count}` : '']
@@ -237,7 +264,7 @@ const describePaid = (name: string, input: Record<string, unknown>) => {
 };
 
 /** the model of a paid call: a top-level or nested field named like model / engine */
-const findModel = (input: unknown, depth = 0): string | undefined => {
+export const findModel = (input: unknown, depth = 0): string | undefined => {
   if (!input || typeof input !== 'object' || depth > 3) return undefined;
   for (const [k, v] of Object.entries(input)) {
     if (/model|engine|^mode$/i.test(k) && (typeof v === 'string' || typeof v === 'number')) return String(v);
@@ -260,7 +287,7 @@ const primitives = (v: unknown, out: string[] = []): string[] => {
  * The estimate for this paid call: the simulate_cost asked with the most of its values
  * (model, prompt, size…); on a tie — the later one. Credits are read from a JSON answer.
  */
-const pickEstimate = (estimates: {input: string; text: string}[], paid: Record<string, unknown>) => {
+export const pickEstimate = (estimates: {input: string; text: string}[], paid: Record<string, unknown>) => {
   const values = primitives(paid).filter((v) => v.length > 1);
   let best: {score: number; text: string} | null = null;
   for (const e of estimates) {
@@ -288,6 +315,31 @@ export const answerApproval = (jobId: string, approvalId: string, allow: boolean
   if (!w || w.approvalId !== approvalId) throw new Error('Этот запрос уже не ждёт ответа');
   w.resolve(allow);
   return getJob(jobId);
+};
+
+/** Shared paid-call approval used by Claude and the Codex connector bridge. */
+export const requestPaidApproval = async (job: Job, signal: AbortSignal, name: string, input: Record<string, unknown>, estimate?: string) => {
+  if (signal.aborted) return false;
+  const approval: Approval = {id: `ap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`, tool:name, what:describePaid(name,input), model:findModel(input), estimate, params:short(JSON.stringify(input),300), status:'pending', at:new Date().toISOString()};
+  job.approvals = [...(job.approvals ?? []),approval];
+  job.log.push({t:Date.now(),kind:'status',text:`Ждёт вашего разрешения: Magnific · ${approval.what}`});
+  await persistJob(job);
+  const allowed = await new Promise<boolean>((resolve) => {
+    let answered = false;
+    const done = (value:boolean) => {
+      if (answered) return; answered = true;
+      clearTimeout(timer); signal.removeEventListener('abort',onAbort); waiting.delete(job.id); resolve(value);
+    };
+    const onAbort = () => done(false);
+    const timer = setTimeout(()=>done(false),15*60*1000);
+    waiting.set(job.id,{approvalId:approval.id,resolve:done});
+    signal.addEventListener('abort',onAbort,{once:true});
+    if (signal.aborted) done(false);
+  });
+  approval.status = allowed ? 'allowed' : 'denied';
+  job.log.push({t:Date.now(),kind:'status',text:`${allowed ? 'Разрешено' : 'Отклонено'}: ${approval.what}`});
+  await persistJob(job);
+  return allowed;
 };
 
 /** Run the agent on a project. Returns immediately; follow the job by id. */
@@ -357,27 +409,55 @@ export const startJob = async (o: {
 
   (async () => {
     const dir = projectDir(o.projectId);
+    let codexJob = false;
     try {
       job.commitBefore = await snapshot(o.projectId, `до: ${o.title}`).catch(() => undefined);
       push('status', 'Запускаю агента…');
       const {query} = await import('@anthropic-ai/claude-agent-sdk');
       const settings = await readSettings();
+      codexJob = settings.agentProvider === 'codex';
+      if(codexJob){
+        job.stage='preparing-inputs';
+        // Legacy stopped pose runs also continue directly into animation for Codex.
+        if(o.poses){
+          o.poses=false;
+          delete lastRun.poses;
+          await fs.writeFile(lastRunFile(o.projectId),JSON.stringify(lastRun,null,2));
+          o.prompt += '\nАктуальный сценарий Codex: в этом запуске сразу реализуй анимацию. Старые указания остановиться на статичных позах и ждать утверждения отменены. Не меняй явно заданные пользователем визуальные требования.';
+        }
+      }
       const env = {...agentEnv(), ...(settings.figmaToken ? {FIGMA_TOKEN: settings.figmaToken} : {})};
       // the project's style and ban list (Настройки проекта) travel with every run
       // …and so does the asset bin with each file's role
       const manifest = await readProject(o.projectId).catch(() => null);
-      const style = styleSection(manifest?.settings) + templateSection(manifest) + (await assetsSection(o.projectId));
+      let figmaSection = '';
+      const explicitFigma = o.prompt.match(/https:\/\/(?:www\.)?figma\.com\/(?:design|file)\/[^\s<>"']+/)?.[0];
+      const figmaUrl = (o.kind !== 'chat' || explicitFigma) ? explicitFigma ?? manifest?.screen?.figmaUrl : undefined;
+      if (codexJob && figmaUrl) {
+        const {prepareFigma,figmaSnapshotSection} = await import('./figma-input');
+        push('status','Подготавливаю узел Figma и исходные ассеты…');
+        const prepared = await prepareFigma(o.projectId,figmaUrl,abort.signal);
+        figmaSection = figmaSnapshotSection(prepared);
+      }
+      const style = styleSection(manifest?.settings) + templateSection(manifest) + (await assetsSection(o.projectId)) + figmaSection;
+      if (codexJob) push('status','Исходники готовы. Запускаю агента…');
       // the agent's Magnific simulate_cost answers: the one asked with the paid call's parameters goes onto its card
       const estimateCalls = new Map<string, string>();
       const estimates: {input: string; text: string}[] = [];
       // the SDK repeats a message's usage on every content block: keep the largest per message id
       const usage = new Map<string, Tokens>();
+      // tokens of the runs before this one (a fast attempt that escalated), so each run can correct its own share
+      let before = NO_TOKENS;
+      let windowsAtStart: Windows | null = null;
+      let windowsAtEnd: Windows | null = null;
 
       /** one agent run; `fast` = the fast model that may write project.json only */
       const run = async (fast: boolean) => {
         let summary: string | undefined;
         let error: string | undefined;
-        for await (const msg of query({
+        before = job.tokens ?? NO_TOKENS;
+        usage.clear();
+        const q = query({
           prompt: o.prompt,
           options: {
             cwd: dir,
@@ -461,8 +541,11 @@ export const startJob = async (o: {
               return {behavior: 'deny', message: `Инструмент ${toolName} студией не разрешён`};
             },
           },
-        })) {
+        });
+        for await (const msg of q) {
           if (msg.type === 'system' && msg.subtype === 'init') {
+            // the plan windows before the work starts (only once per job: an escalation continues the same job)
+            if (!windowsAtStart) windowsAtStart = await planWindows(q);
             job.model = msg.model;
             push('status', fast ? `Быстрая правка · ${msg.model}` : `Агент на связи · ${msg.model}`);
           }
@@ -476,7 +559,7 @@ export const startJob = async (o: {
                 cacheRead: Math.max(was.cacheRead, u.cache_read_input_tokens ?? 0),
                 cacheWrite: Math.max(was.cacheWrite, u.cache_creation_input_tokens ?? 0),
               });
-              job.tokens = [...usage.values()].reduce(addTokens, NO_TOKENS);
+              job.tokens = addTokens(before, [...usage.values()].reduce(addTokens, NO_TOKENS));
             }
             for (const block of msg.message.content) {
               if (block.type === 'text' && block.text.trim()) push('text', block.text.trim());
@@ -502,6 +585,24 @@ export const startJob = async (o: {
             job.costUsd = (job.costUsd ?? 0) + (msg.total_cost_usd ?? 0);
             job.durationMs = (job.durationMs ?? 0) + (msg.duration_ms ?? 0);
             job.turns = (job.turns ?? 0) + (msg.num_turns ?? 0);
+            // the result's usage is the exact total of this run (the streamed messages undercount the answer)
+            const u = msg.usage;
+            if (u) {
+              job.tokens = addTokens(before, {
+                input: u.input_tokens ?? 0,
+                output: u.output_tokens ?? 0,
+                cacheRead: u.cache_read_input_tokens ?? 0,
+                cacheWrite: u.cache_creation_input_tokens ?? 0,
+              });
+            }
+            windowsAtEnd = (await planWindows(q)) ?? windowsAtEnd;
+            if (windowsAtStart && windowsAtEnd) {
+              job.planUse = {
+                plan: windowsAtEnd.plan,
+                fiveHour: spent(windowsAtStart.fiveHour, windowsAtEnd.fiveHour),
+                week: spent(windowsAtStart.week, windowsAtEnd.week),
+              };
+            }
             if (msg.subtype === 'success') summary = msg.result;
             else error = msg.subtype === 'error_max_turns' ? 'Агент упёрся в лимит шагов' : 'Агент завершился с ошибкой';
           }
@@ -510,10 +611,30 @@ export const startJob = async (o: {
       };
 
       // chat and recalc try the fast model first; it hands over when the task needs code
-      let res = o.fast && settings.fastPath !== false ? await run(true) : null;
+      const usingCodex = settings.agentProvider === 'codex';
+      const history = usingCodex ? (await readChat(o.projectId)).slice(-12).map(m=>`${m.role}: ${m.text}`).join('\n').slice(-20000) : '';
+      if(usingCodex)job.stage=o.poses?'building-poses':o.kind==='chat'?'editing':'animating';
+      let res = usingCodex
+        ? await (await import('./codex-run')).runCodex({projectId: o.projectId, prompt: o.prompt, contract: studioContract(o.projectId) + style + (history ? `\n## История этого проекта (последний запрос имеет приоритет)\n${history}` : ''), signal: abort.signal, job, push, maxTurns: o.maxTurns, approve: (name,input,estimate) => requestPaidApproval(job, abort.signal, name, input, estimate)})
+        : o.fast && settings.fastPath !== false ? await run(true) : null;
+      if (usingCodex && res && !res.error && !abort.signal.aborted && (o.kind !== 'chat' || o.poses || job.log.some(l=>l.kind==='tool' && /^(Пишет|Правит) /.test(l.text)))) {
+        job.stage='checking';
+        push('status','Проверяю TypeScript проекта…');
+        const validation = await (await import('./project-tools')).checkProject(o.projectId,abort.signal);
+        if (!validation.ok) res.error = `Проект не прошёл проверку TypeScript:\n${validation.diagnostics}`;
+        if(!res.error && manifest?.template==='screen') {
+          const placeholders=await (await import('./project-tools')).screenPlaceholders(o.projectId);
+          if(placeholders.length)res.error=`Экран ещё не собран: осталась заглушка в ${placeholders.join(', ')}. Задача не считается завершённой.`;
+        }
+        if (!res.error && o.poses) {
+          push('status','Готовлю контактный лист для утверждения…');
+          await (await import('./render')).captureCodexPoses(o.projectId,abort.signal);
+          job.stage='waiting-approval';
+        }
+      }
       // the SDK may end a stopped run quietly — a stop is never «done» (the backlog must stay for the next try)
       if (abort.signal.aborted) throw new Error('stopped');
-      const escalate = res && (res.error || !res.summary || res.summary.trim().startsWith(ESCALATE));
+      const escalate = !usingCodex && res && (res.error || !res.summary || res.summary.trim().startsWith(ESCALATE));
       if (res && escalate) {
         const why = res.summary?.replace(ESCALATE, '').replace(/^[:\s]+/, '').trim();
         push('status', `Нужна правка кода — передаю основной модели${why ? `: ${why}` : ''}`);
@@ -527,7 +648,14 @@ export const startJob = async (o: {
       job.status = job.error ? 'error' : 'done';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (abort.signal.aborted) {
+      if (codexJob && err instanceof Error && err.name === 'FigmaInputError' && !abort.signal.aborted) {
+        const problem = err as Error & {check:{code:string}};
+        job.status = 'blocked';
+        job.stage='waiting-inputs';
+        job.blocker = {code:problem.check.code,message:problem.message};
+        job.error = problem.message;
+        push('status', `Ожидаю исходники: ${problem.message}`);
+      } else if (abort.signal.aborted) {
         job.status = 'stopped';
         push('status', 'Остановлено');
       } else {
@@ -549,9 +677,9 @@ export const startJob = async (o: {
           ? job.summary || 'Готово.'
           : job.status === 'stopped'
             ? 'Остановлено пользователем.'
-            : `Ошибка: ${job.error ?? 'неизвестно'}`;
+            : job.status === 'blocked' ? `Ожидаю исходники. ${job.error} Модель не запускалась; после подключения можно продолжить задачу.` : `Ошибка: ${job.error ?? 'неизвестно'}`;
       const durationMs = job.durationMs ?? Date.now() - new Date(job.startedAt).getTime();
-      const meta: RunMeta = {model: job.model, costUsd: job.costUsd, durationMs, turns: job.turns, tokens: job.tokens};
+      const meta: RunMeta = {model: job.model, costUsd: job.costUsd, durationMs, turns: job.turns, tokens: job.tokens, planUse: job.planUse};
       // a pose run ends with its contact sheet
       const poses = o.poses && job.status === 'done' ? await readPoses(o.projectId).catch(() => [] as Pose[]) : [];
       await appendChat(o.projectId, {
@@ -646,13 +774,13 @@ const lastStopped = async (projectId: string): Promise<{run: LastRun; job: Job} 
     .catch(() => null);
   if (saved) {
     const job = await readJobRecord(projectId, saved.jobId);
-    return job && (job.status === 'stopped' || job.status === 'error') ? {run: saved, job} : null;
+    return job && (job.status === 'stopped' || job.status === 'error' || job.status === 'blocked') ? {run: saved, job} : null;
   }
   const dir = path.join(projectDir(projectId), '.moootion', 'jobs');
   const files = (await fs.readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith('.json'));
   const all = (await Promise.all(files.map((f) => readJobRecord(projectId, f.replace(/\.json$/, ''))))).filter((j): j is Job => Boolean(j));
   const last = all.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-  if (!last || last.kind !== 'create' || (last.status !== 'stopped' && last.status !== 'error')) return null;
+  if (!last || last.kind !== 'create' || (last.status !== 'stopped' && last.status !== 'error' && last.status !== 'blocked')) return null;
   const brief = await fs.readFile(path.join(projectDir(projectId), '.moootion', 'brief.md'), 'utf8').catch(() => '');
   if (!brief) return null;
   return {run: {jobId: last.id, kind: 'create', title: last.title, sceneId: last.sceneId, prompt: brief, poses: brief.includes('ПЕРВЫЙ из двух прогонов'), maxTurns: 400}, job: last};
