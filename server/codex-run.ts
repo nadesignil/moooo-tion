@@ -1,4 +1,5 @@
 import {runSandbox,sandboxStatus} from './sandbox-executor';
+import {connectionFeedback} from './connection-feedback';
 import {contactSheet,composeImages,transformImage,maskImage,differenceMask,transcodeMedia} from './codex-media-workbench';
 import {resolveCodexGuidance, codexGuidanceContract} from './astra-guidance';
 import {codexChoreographyContext, choreographyReview} from './codex-choreography';
@@ -67,6 +68,11 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
   const executor = await waitForExecutor(o.signal);
   o.push('status',executor.ready ? 'Изолированный Python/shell готов' : `Исполнитель: ${executor.reason}`);
   let sessionInfo: {model:string;reasoningEffort:string;guidance:string} | undefined;
+  const feedback = connectionFeedback(status => {
+    if (o.signal.aborted) return;
+    o.job.connection = status;
+    o.push(status.state === 'failed' ? 'error' : 'status', status.message);
+  });
   const c = await new CodexClient(bin).init();
   let settled = false;
   let done!: (v: {summary?: string; error?: string}) => void;
@@ -88,7 +94,7 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
     const response = await guardedConnectorCall(id,a.tool,a.arguments,async () => {
       if (o.signal.aborted) throw new Error('stopped');
       o.push('tool', `${id === 'figma' ? 'Figma' : 'Magnific'} · ${a.tool}`);
-      return callCodexConnector(id,a.tool,a.arguments);
+      return feedback.connector(id === 'figma' ? 'Figma' : 'Magnific', a.tool, () => callCodexConnector(id,a.tool,a.arguments));
     },()=>o.approve?.(a.tool,a.arguments,pickEstimate(exact?[exact]:[],a.arguments)) ?? Promise.resolve(false));
     if (id === 'magnific' && a.tool === 'simulate_cost' && !response.isError) {
       const texts = response.content.filter((c:any)=>c.type==='text').map((c:any)=>c.text).join('\n');
@@ -110,9 +116,10 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
   const finish = (v: {summary?: string; error?: string}) => {if (!settled) {settled = true; done(v);}};
   const stop = () => {if (!settled) {settled = true; fail(new Error('stopped'));} c.close();};
   o.signal.addEventListener('abort', stop, {once: true});
-  c.onClose = (e) => {if (!settled) {settled = true; fail(e);}};
+  c.onClose = (e) => {if (!settled) {settled = true; fail(new Error(feedback.error(e.message, false)));}};
   c.onEvent = (method, p) => {
     if (method === 'item/completed' && p.item?.type === 'agentMessage') {
+      feedback.activity();
       o.push('text', p.item.text);
       if (p.item.phase === 'final_answer') summary = p.item.text;
       else summary = p.item.text || summary;
@@ -123,15 +130,19 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
     }
     if (method === 'turn/completed') {
       o.job.turns = 1;
-      finish(p.turn.status === 'completed' ? {summary} : {error: p.turn.error?.message ?? 'Codex прервал задачу'});
+      finish(p.turn.status === 'completed' ? {summary} : {error: feedback.error(p.turn.error?.message ?? 'Codex прервал задачу', false)});
     }
-    if (method === 'error' && !p.willRetry) finish({error: p.error?.message ?? 'Ошибка Codex'});
+    if (method === 'error') {
+      const error = feedback.error(p.error?.message ?? 'Ошибка Codex', Boolean(p.willRetry));
+      if (!p.willRetry) finish({error});
+    }
   };
   c.onRequest = async (method, p) => {
     // Built-in tools cannot escalate permissions or access configured MCP connectors.
     if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') return {decision: 'decline'};
     if (method === 'item/permissions/requestApproval') return {permissions: {}, scope: 'turn'};
     if (method !== 'item/tool/call') throw new Error('Недоступно');
+    feedback.activity();
     const a = p.arguments as Record<string, any>;
     if (o.signal.aborted) throw new Error('stopped');
     // No studio tool-call cap for Codex; user cancellation is enforced above.

@@ -3,6 +3,7 @@ import {api} from './api';
 import {useStudio} from './store';
 import {useShortcuts} from './shortcuts';
 import {useJobFollow} from './jobFollow';
+import {ConnectionBanner} from './components/ConnectionBanner';
 import {ActionPreviewWindow} from './components/ActionPreviewWindow';
 import {Drawer} from './components/Drawer';
 import {Header} from './components/Header';
@@ -155,6 +156,7 @@ const Workspace: React.FC = () => {
       <Sidebar onToast={showToast} />
       <main className="main" style={{'--drawer-offset': `${drawerOpen ? drawerH + 12 : 64}px`} as React.CSSProperties}>
         <Header onToast={showToast} />
+        <ConnectionBanner />
         <div className="body" ref={bodyRef}>
           {project ? (
             <>

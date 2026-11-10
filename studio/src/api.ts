@@ -48,6 +48,7 @@ export type ProjectUsage = {runs: number; costUsd: number; durationMs: number; t
 /** one item of the agent's checklist (TodoWrite) */
 export type TodoItem = {content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string};
 export type Job = RunMeta & {
+  connection?: import('../../runtime/connection-status').ConnectionStatus;
   id: string;
   projectId: string;
   sceneId: string | null;
@@ -112,10 +113,13 @@ export type ChatMessage = {
 };
 export type Pose = {file: string; url: string; scene?: string; group?: string; title?: string; frame?: number};
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {super(message);}
+}
 const json = async <T,>(res: Response): Promise<T> => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as {error?: string}).error ?? res.statusText);
+    throw new ApiError((body as {error?: string}).error ?? res.statusText, res.status);
   }
   return res.json() as Promise<T>;
 };
@@ -179,7 +183,7 @@ export const api = {
       json<{jobId: string}>(r),
     ),
   chatHistory: (id: string) =>
-    fetch(`/api/projects/${id}/chat`).then((r) =>
+    fetch(`/api/projects/${id}/chat`, {signal: AbortSignal.timeout(10000)}).then((r) =>
       json<{messages: ChatMessage[]; running: {id: string; title: string; kind: string} | null; resumable: Resumable | null}>(r),
     ),
   uploadAttachments: (id: string, files: File[]) => {
@@ -222,7 +226,7 @@ export const api = {
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({label}),
     }).then((r) => json<{head: string}>(r)),
-  job: (id: string, since = 0) => fetch(`/api/jobs/${id}?since=${since}`).then((r) => json<Job>(r)),
+  job: (id: string, since = 0) => fetch(`/api/jobs/${id}?since=${since}`, {signal: AbortSignal.timeout(10000)}).then((r) => json<Job>(r)),
   /** «Утвердить» starts the animation run, notes without approve re-render the poses */
   answerPoses: (id: string, body: {messageId: string; approve: boolean; notes: {title: string; text: string}[]; general?: string}) =>
     fetch(`/api/projects/${id}/poses`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)}).then((r) =>

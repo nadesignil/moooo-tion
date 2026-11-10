@@ -65,6 +65,7 @@ export type Approval = {
 };
 
 export type Job = RunMeta & {
+  connection?: import('../runtime/connection-status').ConnectionStatus;
   id: string;
   projectId: string;
   sceneId: string | null;

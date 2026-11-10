@@ -724,7 +724,7 @@ const port = Number(process.env.MOOOTION_API_PORT ?? 8787);
 serve({fetch: app.fetch, port}, () => {
   console.log(`moootion api → http://localhost:${port}`);
   // Covers npm dev/start/server and both packaged launchers without changing Claude's runner.
-  void import('./executor-startup').then(m=>m.ensureExecutor()).catch(err=>console.error('executor startup failed',err));
+  void import('./startup-tools').then(m=>m.prepareStudioTools()).catch(err=>console.error('tools startup failed',err));
   jobsMod()
     .then((m) => m.recoverInterruptedJobs())
     .catch((err) => console.error('job recovery failed', err));

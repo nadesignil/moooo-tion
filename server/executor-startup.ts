@@ -1,6 +1,7 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import path from 'node:path';
+import {startDockerDesktop} from './docker-desktop-start';
 import {ROOT} from './paths';
 import {dockerBin, executorDocker, sandboxStatus, EXECUTOR_IMAGE} from './sandbox-executor';
 
@@ -66,7 +67,7 @@ const startup = createExecutorStartup({
   status: () => sandboxStatus(),
   start: async () => {
     // Native Docker CLI; no agent code and no arbitrary host shell.
-    await exec(await dockerBin(), ['desktop','start','--detach'], {windowsHide:true,timeout:30_000,maxBuffer:256_000});
+    await startDockerDesktop(await dockerBin());
   },
   diagnostic: async () => {
     if (process.platform !== 'win32') return;

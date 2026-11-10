@@ -30,6 +30,8 @@ jobs:
           server/astra-guidance.test.ts
           server/codex-policy.test.ts
           server/executor-startup.test.ts
+          server/docker-desktop-start.test.ts
+          server/connection-feedback.test.ts
           server/sandbox-executor.test.ts
           server/project-history-git.test.ts
           server/codex.test.ts
