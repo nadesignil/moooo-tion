@@ -28,6 +28,7 @@ jobs:
         run: >-
           node --import tsx --test
           server/astra-guidance.test.ts
+          server/codex-policy.test.ts
           server/project-history-git.test.ts
           server/codex.test.ts
           server/codex-choreography.test.ts

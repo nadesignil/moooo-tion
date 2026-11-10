@@ -5,6 +5,7 @@ import {codexChoreographyContext, choreographyReview} from './codex-choreography
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {CodexClient, findCodex} from './codex';
+import {readCodexPolicy} from './codex-policy';
 import {ROOT, projectDir} from './paths';
 import {readProject, writeProject} from './projects';
 import {addAssets, type AssetEntry} from './assets';
@@ -232,27 +233,23 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
     const cfg = (await c.request('config/read', {includeLayers: false})).config ?? {};
     const disabledMcp = Object.fromEntries(Object.keys(cfg.mcp_servers ?? {}).map((name) => [`mcp_servers.${name}.enabled`, false]));
     // Optional model override belongs to this project, never to the Claude provider.
-    const requestedModel = profile.model;
-    const catalog = await c.request('model/list', {limit: 100});
-    if (requestedModel !== undefined && (typeof requestedModel !== 'string' || !catalog.data?.some((m: any) => m.model === requestedModel))) {
-      throw new Error('Запрошенная модель Codex недоступна: ' + String(requestedModel));
-    }
-    const effectiveModel = requestedModel ?? cfg.model ?? catalog.data?.find((m: any) => m.isDefault)?.model;
-    if (typeof effectiveModel !== 'string' || !effectiveModel) throw new Error('Не удалось определить модель Codex');
+    const policy = await readCodexPolicy(c, profile);
+    const effectiveModel = policy.model;
     const guidance = resolveCodexGuidance(effectiveModel, profile.guidance);
     const contract = await codexGuidanceContract(o.projectId, o.contract, guidance);
     const motionContext = guidance === 'legacy' ? await codexChoreographyContext(await readProject(o.projectId), o.prompt) : '';
-    o.push('status', `Профиль Codex: ${guidance}`);
+    o.push('status', `Codex: ${effectiveModel} · рассуждение ${policy.effort} · профиль ${guidance} · ${policy.source}`);
     const r = await c.request('thread/start', {
       model: effectiveModel,
       cwd: dir, ephemeral: true, approvalPolicy: 'untrusted', sandbox: 'read-only',
-      config: {...disabledMcp, 'features.shell_tool': false, 'features.unified_exec': false, 'features.code_mode': false, 'features.code_mode_host': false, 'features.apps': false, 'features.plugins': false, web_search: 'disabled'},
+      config: {...disabledMcp, model_reasoning_effort: policy.effort, 'features.shell_tool': false, 'features.unified_exec': false, 'features.code_mode': false, 'features.code_mode_host': false, 'features.apps': false, 'features.plugins': false, web_search: 'disabled'},
       developerInstructions: contract + motionContext + '\nРаботай только инструментами studio_*. Shell хоста и соседние проекты недоступны. Для произвольного Python/shell сначала проверь studio_executor_status, затем используй studio_exec в изолированном контейнере. Входы доступны в /input, результаты записывай в /output. При недоступности исполнителя сообщи об этом; не пытайся обойти изоляцию. Figma и Magnific вызывай только через studio_connector_tools и studio_connector_call. studio_read читает текст и изображения; studio_write пишет полный файл; studio_still рендерит кадр. Общий рантайм читай studio_runtime или studio_shared. Для эталона используй studio_shared с templates/demo/. Для поиска/точечных правок доступны studio_search/studio_patch. Проверяй TypeScript через studio_check. Видео-референсы разбирай studio_media_frames, звук — studio_audio, детали кадра — studio_crop и studio_compare. Перед итогом обязательно проверь типы и кадры, затем перечисли проверенные файлы. Не заявляй готовность, если остались заглушки, отсутствующие ассеты или ошибки сборки. Для Figma сначала получи схему get_design_context/get_metadata/get_screenshot; записи в Figma запрещены. Для Magnific сначала изучи инструменты и вызови simulate_cost с параметрами будущего платного вызова; затем вызови платный инструмент один раз и дождись ответа карточки. После отказа не повторяй. Скачивай ссылки на готовые файлы инструментом studio_import_asset: он кладёт файл в корзину и сохраняет источник. При необходимости дополни prompt/model/cost в inputs/assets.json. Для creations_get/wait сохрани сведения исходной генерации. Если сервис не подключён — попроси подключить его в настройках студии. Команды Bash/CLI в базовом контракте обозначают операции: TodoWrite заменён studio_plan, tsc — studio_check, remotion still — studio_still, FFmpeg/Python: нарезка — studio_media_frames; контакт-листы — studio_contact_sheet; масштаб/поворот — studio_image_transform; композиция — studio_image_compose; маски — studio_difference_mask/studio_image_mask; перекодирование — studio_transcode; анализ — studio_crop/studio_compare/studio_audio, curl — studio_import_asset. Не вызывай shell хоста; произвольные программы запускай только studio_exec. Образ контейнера содержит библиотеки, сеть выключена; скачивать пакеты из сети в скрипте нельзя. Сначала читай подготовленный пакет inputs/figma/, затем эталон и рантайм. Для каждого семейства и начертания макета вызови studio_font и загрузи возвращённые файлы через FontFace с delayRender/continueRender; запасной шрифт не является точным совпадением. Если шрифт не найден, явно запроси файл и не заявляй идентичную типографику. Не меняй студию.',
       dynamicTools: TOOLS,
     });
+    if (r.model !== effectiveModel) throw new Error(`Codex изменил выбранную модель: ${effectiveModel} → ${r.model}`);
     o.job.model = r.model;
     o.push('status', `Codex на связи · ${r.model}`);
-    await c.request('turn/start', {threadId: r.thread.id, input: [{type: 'text', text: o.prompt}], approvalPolicy: 'untrusted', sandboxPolicy: {type: 'readOnly', networkAccess: false}});
+    await c.request('turn/start', {threadId: r.thread.id, model: effectiveModel, effort: policy.effort, input: [{type: 'text', text: o.prompt}], approvalPolicy: 'untrusted', sandboxPolicy: {type: 'readOnly', networkAccess: false}});
     return await completed;
   } finally {o.signal.removeEventListener('abort', stop); settled = true; c.close();}
 };

@@ -4,13 +4,13 @@ import {studioContract} from './agent-prompt';
 
 export type CodexGuidance = 'legacy' | 'corrective' | 'method-13';
 
-/** A project override wins; account models outside Astra retain their existing instructions. */
-export const resolveCodexGuidance = (model: string, override?: unknown): CodexGuidance => {
+/** Production guidance is independent of model names. Explicit experiment overrides win. */
+export const resolveCodexGuidance = (_model: string, override?: unknown): CodexGuidance => {
   if (override !== undefined) {
     if (override === 'legacy' || override === 'corrective' || override === 'method-13') return override;
     throw new Error('Неизвестный профиль инструкций Codex: ' + String(override));
   }
-  return /(?:^|-)astra(?:-|$)/i.test(model) ? 'method-13' : 'legacy';
+  return 'method-13';
 };
 
 export const codexGuidanceContract = async (projectId: string, original: string, guidance: CodexGuidance) => {

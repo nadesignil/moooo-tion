@@ -6,10 +6,11 @@ import {resolveCodexGuidance, codexGuidanceContract} from './astra-guidance';
 import {correctiveContract} from './corrective-contract';
 import {studioContract} from './agent-prompt';
 
-test('Astra selects method 13 while other models and explicit experiment profiles keep their contract', async () => {
+test('method 13 is model-independent while explicit experiment profiles keep their contract', async () => {
   assert.equal(resolveCodexGuidance('gpt-6-astra'), 'method-13');
   assert.equal(resolveCodexGuidance('gpt-6-astra-preview'), 'method-13');
-  assert.equal(resolveCodexGuidance('gpt-6-sol'), 'legacy');
+  assert.equal(resolveCodexGuidance('gpt-6.1-sol'), 'method-13');
+  assert.equal(resolveCodexGuidance('future-model'), 'method-13');
   assert.equal(resolveCodexGuidance('gpt-6-astra', 'corrective'), 'corrective');
   assert.equal(resolveCodexGuidance('gpt-6-astra', 'legacy'), 'legacy');
   assert.throws(() => resolveCodexGuidance('gpt-6-astra', 'typo'));

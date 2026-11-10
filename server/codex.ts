@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {ROOT} from './paths';
+import {readCodexPolicy} from './codex-policy';
 
 /** Official Codex app-server, newline-delimited JSON-RPC over private stdio. */
 export class CodexClient {
@@ -138,12 +139,10 @@ export const verifyCodex = async () => {
   const st = await codexStatus();
   if (!st.login) return {ok: false, error: st.error ?? 'Сначала войдите в Codex через ChatGPT'};
   try {
-    const r = await (await auth()).request('model/list', {limit: 100});
-    const model = r.data?.find((m: any) => m.isDefault)?.model ?? r.data?.find((m: any) => !m.hidden)?.model;
-    if (!model) return {ok: false, error: 'В аккаунте Codex нет доступных моделей'};
+    const {model} = await readCodexPolicy(await auth());
     verified = {at: new Date().toISOString(), model};
     return {ok: true, model};
-  } catch {return {ok: false, error: 'Не удалось получить модели Codex. Проверьте подключение и повторите.'};}
+  } catch {return {ok: false, error: 'Не удалось подтвердить доступ к Astra и её уровням рассуждения. Проверьте подключение и доступность модели; автоматическая замена отключена.'};}
 };
 
 /** Config names only, never tokens or header values. */
