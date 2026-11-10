@@ -40,7 +40,11 @@ app.get('/api/connectors', async (c) => {
 
 // ── Codex account login (official app-server owns credentials and callback) ──
 const codex = () => import('./codex');
-app.get('/api/codex/executor', async (c) => c.json(await (await import('./sandbox-executor')).sandboxStatus()));
+app.get('/api/codex/executor', async (c) => {
+  const startup=(await import('./executor-startup')).executorStartupState();
+  const actual=await (await import('./sandbox-executor')).sandboxStatus();
+  return c.json({...actual,...(!actual.ready && startup.phase==='unavailable' ? {reason:startup.reason} : {}),startup});
+});
 app.get('/api/codex/status', async (c) => c.json(await (await codex()).codexStatus()));
 app.post('/api/codex/login', async (c) => c.json(await (await codex()).startCodexLogin()));
 app.post('/api/codex/login/cancel', async (c) => c.json(await (await codex()).cancelCodexLogin()));
@@ -719,6 +723,8 @@ app.get('/renders/:name', async (c) => {
 const port = Number(process.env.MOOOTION_API_PORT ?? 8787);
 serve({fetch: app.fetch, port}, () => {
   console.log(`moootion api → http://localhost:${port}`);
+  // Covers npm dev/start/server and both packaged launchers without changing Claude's runner.
+  void import('./executor-startup').then(m=>m.ensureExecutor()).catch(err=>console.error('executor startup failed',err));
   jobsMod()
     .then((m) => m.recoverInterruptedJobs())
     .catch((err) => console.error('job recovery failed', err));

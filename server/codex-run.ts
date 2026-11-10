@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {CodexClient, findCodex} from './codex';
 import {readCodexPolicy} from './codex-policy';
+import {waitForExecutor, executorStartupState} from './executor-startup';
 import {ROOT, projectDir} from './paths';
 import {readProject, writeProject} from './projects';
 import {addAssets, type AssetEntry} from './assets';
@@ -22,6 +23,7 @@ const tool = (name: string, description: string, properties: Record<string, unkn
 });
 const str = {type: 'string'};
 const TOOLS = [
+  tool('studio_agent_status','Read verified model, reasoning effort, guidance and executor readiness for this run. The studio chooses the model before the run starts; this read-only tool does not switch models.',{},[]),
   tool('studio_executor_status','Check whether isolated Python/shell execution is available. Missing Docker is an error, never a host execution fallback.',{},[]),
   tool('studio_exec','Run arbitrary Python or POSIX shell in an isolated offline Linux container with Python, Pillow, NumPy, SciPy, OpenCV and FFmpeg. Select up to 64 project input files: copied read-only to /input/<relative path>. Write results only under /output. No host/sibling projects, secrets, network or package downloads; the studio runtime stays on the host. Results are published as NEW files in .moootion/executions; use studio_copy to adopt selected assets. stdout/stderr and exitCode are returned. Script must finish within timeoutSeconds (1–300, default 120). Check studio_executor_status first.',{language:{type:'string',enum:['python','shell']},code:str,inputs:{type:'array',items:str,maxItems:64},timeoutSeconds:{type:'integer',minimum:1,maximum:300}},['language','code','inputs']),
   tool('studio_contact_sheet','Create an aspect-preserving contact sheet of local project images. Interleave reference/result pairs. Returns image path and cell coordinates.',{paths:{type:'array',items:str,minItems:1,maxItems:32},columns:{type:'integer',minimum:1,maximum:8},cellWidth:{type:'integer',minimum:64,maximum:1920},cellHeight:{type:'integer',minimum:64,maximum:1080}},['paths','columns','cellWidth','cellHeight']),
@@ -61,6 +63,10 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
   const dir = projectDir(o.projectId);
   const profile = JSON.parse(await fs.readFile(path.join(dir, '.moootion', 'codex-run.json'), 'utf8').catch((e) => {if(e.code==='ENOENT')return '{}';throw e;}));
 
+  o.push('status','Подготавливаю изолированный Python/shell вместе со студией…');
+  const executor = await waitForExecutor(o.signal);
+  o.push('status',executor.ready ? 'Изолированный Python/shell готов' : `Исполнитель: ${executor.reason}`);
+  let sessionInfo: {model:string;reasoningEffort:string;guidance:string} | undefined;
   const c = await new CodexClient(bin).init();
   let settled = false;
   let done!: (v: {summary?: string; error?: string}) => void;
@@ -132,7 +138,11 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
     const result = (text: string) => ({success: true, contentItems: [{type: 'inputText', text}]});
     try {
       switch (p.tool) {
-        case 'studio_executor_status': return result(JSON.stringify(await sandboxStatus()));
+        case 'studio_agent_status': return result(JSON.stringify({...sessionInfo,executor:await sandboxStatus(o.signal),startup:executorStartupState()}));
+        case 'studio_executor_status': {
+          const actual=await sandboxStatus(o.signal),startup=executorStartupState();
+          return result(JSON.stringify({...actual,...(!actual.ready && startup.phase==='unavailable' ? {reason:startup.reason} : {}),startup}));
+        }
         case 'studio_exec': {
           o.push('tool',`Выполняет ${a.language} в изолированном контейнере`);
           const report=await runSandbox(o.projectId,a as any,o.signal);
@@ -237,16 +247,19 @@ export const runCodex = async (o: {projectId: string; prompt: string; contract: 
     const effectiveModel = policy.model;
     const guidance = resolveCodexGuidance(effectiveModel, profile.guidance);
     const contract = await codexGuidanceContract(o.projectId, o.contract, guidance);
+    const sessionContext = `\n## Текущий запуск (задано студией)\nМодель: ${effectiveModel}; рассуждение: ${policy.effort}; профиль: ${guidance}. Студия сверяет модель в ответе Codex до начала генерации. Для подтверждения используй studio_agent_status; переключение модели внутри запуска не требуется. Изолированный исполнитель: ${executor.ready ? 'готов' : executor.reason}.\n`;
     const motionContext = guidance === 'legacy' ? await codexChoreographyContext(await readProject(o.projectId), o.prompt) : '';
     o.push('status', `Codex: ${effectiveModel} · рассуждение ${policy.effort} · профиль ${guidance} · ${policy.source}`);
     const r = await c.request('thread/start', {
       model: effectiveModel,
       cwd: dir, ephemeral: true, approvalPolicy: 'untrusted', sandbox: 'read-only',
       config: {...disabledMcp, model_reasoning_effort: policy.effort, 'features.shell_tool': false, 'features.unified_exec': false, 'features.code_mode': false, 'features.code_mode_host': false, 'features.apps': false, 'features.plugins': false, web_search: 'disabled'},
-      developerInstructions: contract + motionContext + '\nРаботай только инструментами studio_*. Shell хоста и соседние проекты недоступны. Для произвольного Python/shell сначала проверь studio_executor_status, затем используй studio_exec в изолированном контейнере. Входы доступны в /input, результаты записывай в /output. При недоступности исполнителя сообщи об этом; не пытайся обойти изоляцию. Figma и Magnific вызывай только через studio_connector_tools и studio_connector_call. studio_read читает текст и изображения; studio_write пишет полный файл; studio_still рендерит кадр. Общий рантайм читай studio_runtime или studio_shared. Для эталона используй studio_shared с templates/demo/. Для поиска/точечных правок доступны studio_search/studio_patch. Проверяй TypeScript через studio_check. Видео-референсы разбирай studio_media_frames, звук — studio_audio, детали кадра — studio_crop и studio_compare. Перед итогом обязательно проверь типы и кадры, затем перечисли проверенные файлы. Не заявляй готовность, если остались заглушки, отсутствующие ассеты или ошибки сборки. Для Figma сначала получи схему get_design_context/get_metadata/get_screenshot; записи в Figma запрещены. Для Magnific сначала изучи инструменты и вызови simulate_cost с параметрами будущего платного вызова; затем вызови платный инструмент один раз и дождись ответа карточки. После отказа не повторяй. Скачивай ссылки на готовые файлы инструментом studio_import_asset: он кладёт файл в корзину и сохраняет источник. При необходимости дополни prompt/model/cost в inputs/assets.json. Для creations_get/wait сохрани сведения исходной генерации. Если сервис не подключён — попроси подключить его в настройках студии. Команды Bash/CLI в базовом контракте обозначают операции: TodoWrite заменён studio_plan, tsc — studio_check, remotion still — studio_still, FFmpeg/Python: нарезка — studio_media_frames; контакт-листы — studio_contact_sheet; масштаб/поворот — studio_image_transform; композиция — studio_image_compose; маски — studio_difference_mask/studio_image_mask; перекодирование — studio_transcode; анализ — studio_crop/studio_compare/studio_audio, curl — studio_import_asset. Не вызывай shell хоста; произвольные программы запускай только studio_exec. Образ контейнера содержит библиотеки, сеть выключена; скачивать пакеты из сети в скрипте нельзя. Сначала читай подготовленный пакет inputs/figma/, затем эталон и рантайм. Для каждого семейства и начертания макета вызови studio_font и загрузи возвращённые файлы через FontFace с delayRender/continueRender; запасной шрифт не является точным совпадением. Если шрифт не найден, явно запроси файл и не заявляй идентичную типографику. Не меняй студию.',
+      developerInstructions: contract + sessionContext + motionContext + '\nРаботай только инструментами studio_*. Shell хоста и соседние проекты недоступны. Для произвольного Python/shell сначала проверь studio_executor_status, затем используй studio_exec в изолированном контейнере. Входы доступны в /input, результаты записывай в /output. При недоступности исполнителя сообщи об этом; не пытайся обойти изоляцию. Figma и Magnific вызывай только через studio_connector_tools и studio_connector_call. studio_read читает текст и изображения; studio_write пишет полный файл; studio_still рендерит кадр. Общий рантайм читай studio_runtime или studio_shared. Для эталона используй studio_shared с templates/demo/. Для поиска/точечных правок доступны studio_search/studio_patch. Проверяй TypeScript через studio_check. Видео-референсы разбирай studio_media_frames, звук — studio_audio, детали кадра — studio_crop и studio_compare. Перед итогом обязательно проверь типы и кадры, затем перечисли проверенные файлы. Не заявляй готовность, если остались заглушки, отсутствующие ассеты или ошибки сборки. Для Figma сначала получи схему get_design_context/get_metadata/get_screenshot; записи в Figma запрещены. Для Magnific сначала изучи инструменты и вызови simulate_cost с параметрами будущего платного вызова; затем вызови платный инструмент один раз и дождись ответа карточки. После отказа не повторяй. Скачивай ссылки на готовые файлы инструментом studio_import_asset: он кладёт файл в корзину и сохраняет источник. При необходимости дополни prompt/model/cost в inputs/assets.json. Для creations_get/wait сохрани сведения исходной генерации. Если сервис не подключён — попроси подключить его в настройках студии. Команды Bash/CLI в базовом контракте обозначают операции: TodoWrite заменён studio_plan, tsc — studio_check, remotion still — studio_still, FFmpeg/Python: нарезка — studio_media_frames; контакт-листы — studio_contact_sheet; масштаб/поворот — studio_image_transform; композиция — studio_image_compose; маски — studio_difference_mask/studio_image_mask; перекодирование — studio_transcode; анализ — studio_crop/studio_compare/studio_audio, curl — studio_import_asset. Не вызывай shell хоста; произвольные программы запускай только studio_exec. Образ контейнера содержит библиотеки, сеть выключена; скачивать пакеты из сети в скрипте нельзя. Сначала читай подготовленный пакет inputs/figma/, затем эталон и рантайм. Для каждого семейства и начертания макета вызови studio_font и загрузи возвращённые файлы через FontFace с delayRender/continueRender; запасной шрифт не является точным совпадением. Если шрифт не найден, явно запроси файл и не заявляй идентичную типографику. Не меняй студию.',
       dynamicTools: TOOLS,
     });
     if (r.model !== effectiveModel) throw new Error(`Codex изменил выбранную модель: ${effectiveModel} → ${r.model}`);
+    if (r.reasoningEffort !== policy.effort) throw new Error(`Codex изменил уровень рассуждения: ${policy.effort} → ${r.reasoningEffort}`);
+    sessionInfo = {model:r.model,reasoningEffort:r.reasoningEffort,guidance};
     o.job.model = r.model;
     o.push('status', `Codex на связи · ${r.model}`);
     await c.request('turn/start', {threadId: r.thread.id, model: effectiveModel, effort: policy.effort, input: [{type: 'text', text: o.prompt}], approvalPolicy: 'untrusted', sandboxPolicy: {type: 'readOnly', networkAccess: false}});

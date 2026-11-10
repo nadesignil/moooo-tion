@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
+import os from 'node:os';
 import {TEMP_ROOT,projectDir} from './paths';
 import {scopedPath} from './project-scope';
 
@@ -24,8 +25,15 @@ export function safeRelative(p:string){
  if(!p||p.includes('\\')||parts.some(s=>!s||s==='.'||s==='..'||/[<>:"|?*\x00-\x1f]/.test(s)||/[. ]$/.test(s)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(s)))throw new Error('Недопустимый относительный путь');
  return p;
 }
-const host=process.platform==='win32'?'npipe:////./pipe/docker_engine':'unix:///var/run/docker.sock';
-async function dockerBin(){
+async function dockerHost(){
+ if(process.platform==='win32')return 'npipe:////./pipe/docker_engine';
+ if(process.platform==='darwin'){
+  const socket=path.join(os.homedir(),'.docker','run','docker.sock');
+  if(await fs.access(socket).then(()=>true,()=>false))return `unix://${socket}`;
+ }
+ return 'unix:///var/run/docker.sock';
+}
+export async function dockerBin(){
  if(process.platform==='win32'){
   const candidates=[
    process.env.LOCALAPPDATA&&path.join(process.env.LOCALAPPDATA,'Programs','DockerDesktop','resources','bin','docker.exe'),
@@ -33,11 +41,17 @@ async function dockerBin(){
   ].filter((p):p is string=>Boolean(p));
   for(const bin of candidates)if(await fs.access(bin).then(()=>true,()=>false))return bin;
  }
+ if(process.platform==='darwin'){
+  for(const bin of [path.join(os.homedir(),'.docker','bin','docker'),'/Applications/Docker.app/Contents/Resources/bin/docker']){
+   if(await fs.access(bin).then(()=>true,()=>false))return bin;
+  }
+ }
  return process.platform==='win32'?'docker.exe':'docker';
 }
 /** Never invokes a host shell. Script text only travels to container stdin. */
 async function command(bin:string,args:string[],opts:{signal?:AbortSignal;stdin?:string;timeout?:number;maxOutput?:number}={}):Promise<CommandResult>{
  if(opts.signal?.aborted)throw new Error('stopped');
+ const host=await dockerHost();
  return new Promise((resolve,reject)=>{
   const child=spawn(bin,['--host',host,...args],{windowsHide:true,stdio:['pipe','pipe','pipe'],shell:false});
   let stdout='',stderr='',bytes=0,error:Error|undefined;
@@ -54,14 +68,15 @@ async function command(bin:string,args:string[],opts:{signal?:AbortSignal;stdin?
   if(opts.signal?.aborted)abort();
  });
 }
+export const executorDocker=async(args:string[],opts:{timeout?:number;maxOutput?:number}={})=>command(await dockerBin(),args,opts);
 export async function sandboxStatus(signal?:AbortSignal){
  const bin=await dockerBin();
  try{
   const info=await command(bin,['info','--format','{{.OSType}}'],{signal});
-  if(info.code!==0)return {ready:false,reason:'Linux-движок Docker не отвечает. Запустите Docker Desktop; после установки WSL может требоваться перезагрузка Windows.',image:EXECUTOR_IMAGE};
-  if(info.stdout.trim()!=='linux')return {ready:false,reason:'Переключите Docker на Linux-контейнеры',image:EXECUTOR_IMAGE};
+  if(info.code!==0)return {ready:false,code:'engine-unavailable',reason:'Linux-движок Docker не отвечает. Запустите Docker Desktop; после установки WSL может требоваться перезагрузка Windows.',image:EXECUTOR_IMAGE};
+  if(info.stdout.trim()!=='linux')return {ready:false,code:'wrong-engine',reason:'Переключите Docker на Linux-контейнеры',image:EXECUTOR_IMAGE};
   const image=await command(bin,['image','inspect',EXECUTOR_IMAGE,'--format','{{.Id}}'],{signal});
-  if(image.code!==0||!/^sha256:[a-f0-9]{64}$/.test(image.stdout.trim()))return {ready:false,reason:'Образ исполнителя не собран: tools/build-executor.ps1',image:EXECUTOR_IMAGE};
+  if(image.code!==0||!/^sha256:[a-f0-9]{64}$/.test(image.stdout.trim()))return {ready:false,code:'image-missing',reason:'Образ исполнителя ещё не собран; студия подготовит его при запуске.',image:EXECUTOR_IMAGE};
   return {ready:true,image:EXECUTOR_IMAGE,imageId:image.stdout.trim()};
  }catch(e){
   if(signal?.aborted)throw new Error('stopped');
